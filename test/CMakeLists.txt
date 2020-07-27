@@ -9,3 +9,7 @@ target_link_libraries(sz_test SZ3)
 add_executable(sz_demo sz_demo.cpp)
 target_include_directories(sz_demo PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(sz_demo SZ3)
+
+add_executable(sz_predictor_bypass_test sz_predictor_bypass_test.cpp)
+target_include_directories(sz_predictor_bypass_test PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(sz_predictor_bypass_test SZ3)
