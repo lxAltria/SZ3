@@ -6,6 +6,7 @@
 #define SZ_SZ_HPP
 
 #include "compressor/SZ_General_Compressor.hpp"
+#include "compressor/SZ_Pastri_Compressor.hpp"
 #include "predictor/Predictor.hpp"
 #include "predictor/LorenzoPredictor.hpp"
 #include "predictor/RegressionPredictor.hpp"

@@ -9,7 +9,8 @@ namespace SZ {
     template<class T, uint N>
     class Config {
     public:
-        Config(T _eb, std::array<size_t, N> _dims) : eb(_eb), dims(_dims) {
+        Config(T _eb, std::array<size_t, N> _dims, T l1=1, T l2=1) : eb(_eb), dims(_dims),
+            pattern_eb(l1*_eb), scale_eb(l2*_eb) {
             switch (N) {
                 case 1:
                     block_size = 128;
@@ -36,9 +37,12 @@ namespace SZ {
         bool enable_regression = true;
         bool enable_2ndregression = false;
         bool enable_lossless = true;
-        size_t quant_bin = 32768;
+        size_t quant_bin = 32;
         uint block_size, stride, pred_dim = 0;
         T eb;
+        // for pastri
+        T pattern_eb, scale_eb = 0;
+        size_t num_patterns, pattern_repeated_times, pattern_size = 0;
     };
 }
 
