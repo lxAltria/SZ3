@@ -44,8 +44,8 @@ namespace SZ {
             int radius = quantizer.get_radius();
             write(eb, compressed_data_pos);
             write(radius, compressed_data_pos);
-            pattern_eb = 1000 * eb;
-            scale_eb = 10000 * eb;
+            pattern_eb = eb;
+            scale_eb = eb;
             write(pattern_eb, compressed_data_pos);
             write(scale_eb, compressed_data_pos);
             Quantizer pattern_quantizer(pattern_eb, radius);
