@@ -14,13 +14,13 @@
 #include <cstring>
 
 namespace SZ {
-    template<class T, size_t N, class Quantizer, class Encoder, class Lossless>
+    template<class T, size_t N, class Encoder, class Lossless>
     class GAMESS_Pattern_Based_Compressor {
     public:
-
-
-        GAMESS_Pattern_Based_Compressor(const Config<T, N> &conf, Quantizer quantizer, Encoder encoder, Lossless lossless) :
-                quantizer(quantizer), encoder(encoder), lossless(lossless), num_elements(conf.num), 
+        using Quantizer = PastriQuantizer<T>; 
+        GAMESS_Pattern_Based_Compressor(const Config<T, N> &conf, Encoder encoder, Lossless lossless) :
+                encoder(encoder), lossless(lossless), num_elements(conf.num), 
+                eb(conf.eb), quant_bin(conf.quant_bin), pattern_eb(conf.pattern_eb), scale_eb(conf.scale_eb), 
                 num_patterns(conf.num_patterns), pattern_repeated_times(conf.pattern_repeated_times), 
                 pattern_size(conf.pattern_size){
             // assert if pattern dimensions and data dimensions do not match
@@ -34,6 +34,7 @@ namespace SZ {
 
         uchar *compress(T *data, size_t &compressed_size) {
             PatternPredictor<T> predictor = PatternPredictor<T>(pattern_repeated_times, pattern_size);
+            Quantizer quantizer(eb, quant_bin);
             // quantizer.precompress_data();
             uchar *compressed_data = new uchar[2 * num_elements * sizeof(T)];
             uchar *compressed_data_pos = compressed_data;
@@ -44,8 +45,6 @@ namespace SZ {
             int radius = quantizer.get_radius();
             write(eb, compressed_data_pos);
             write(radius, compressed_data_pos);
-            pattern_eb = eb;
-            scale_eb = eb;
             write(pattern_eb, compressed_data_pos);
             write(scale_eb, compressed_data_pos);
             Quantizer pattern_quantizer(pattern_eb, radius);
@@ -73,51 +72,37 @@ namespace SZ {
             for(int i=0; i<num_patterns; i++){
                 // extract pattern
                 predictor.extract_pattern(data_pos, pattern.data());
+                // quantize pattern by pattern quantizer
                 for(int j=0; j<pattern.size(); j++){
                     pattern_quant_inds[pattern_quant_count ++] = pattern_quantizer.quantize_and_overwrite(pattern[j], 0);
-                }
-                if(i == 0){
-                    for(int j=0; j<pattern.size(); j++){
-                        std::cout << pattern[j] << " ";
-                    }
-                    std::cout << std::endl;
                 }
                 for(int j=0; j<pattern_repeated_times; j++){
                     // compute scaling factor
                     T scale = predictor.compute_scale(data_pos, pattern.data());
+                    // quantize scaling factor by scale quantizer
                     scale_quant_inds[scale_quant_count ++] = scale_quantizer.quantize_and_overwrite(scale, 0);
-                    if(i == 0 && j == 0){
-                        std::cout << "scale = " << scale << std::endl;
-                        std::cout << "scale_quant = " << scale_quant_inds[scale_quant_count - 1] << std::endl;
-                        for(int k=0; k<pattern_size; k++){
-                            std::cout << data_pos[k] << " ";
-                        }
-                        std::cout << std::endl;
-                    }
                     for(int k=0; k<pattern_size; k++){
                         T cur_data = *(data_pos++);
-                        quant_inds[quant_count ++] = quantizer.quantize_and_overwrite(cur_data, scale * pattern[k]);
+                        quant_inds[quant_count] = quantizer.quantize_and_overwrite(cur_data, scale * pattern[k]);
+                        quant_count ++;
                     }
                 }
+                quantizer.save(compressed_data_pos);
+                // std::cout << "block encoding size = " << compressed_data_pos - prev_size << std::endl;
             }
             clock_gettime(CLOCK_REALTIME, &end);
             std::cout << "Predition & Quantization time = "
                       << (double) (end.tv_sec - start.tv_sec) + (double) (end.tv_nsec - start.tv_nsec) / (double) 1000000000
                       << "s" << std::endl;
-            // exit(0);
-            // writefile("quant_inds.dat", quant_inds.data(), quant_inds.size());
-            // writefile("pattern_quant_inds.dat", pattern_quant_inds.data(), pattern_quant_inds.size());
-            // writefile("scale_quant_inds.dat", scale_quant_inds.data(), scale_quant_inds.size());
             size_t compressed_predictor_size = compressed_data_pos - compressed_predictor_pos - sizeof(size_t);
-            std::cout << "skip predictors with size " << compressed_predictor_size << std::endl;
+            std::cout << "skip quantizer with size " << compressed_predictor_size << std::endl;
             write(compressed_predictor_size, compressed_predictor_pos);
             std::cout << "predictor pos = " << compressed_predictor_pos - compressed_data << std::endl;
 
             // quantizer.postcompress_data();
+            std::cout << "quantizer pos = " << compressed_data_pos - compressed_data << std::endl;
             pattern_quantizer.save(compressed_data_pos);
             scale_quantizer.save(compressed_data_pos);
-            // std::cout << "quantizer pos = " << compressed_data_pos - compressed_data << std::endl;
-            quantizer.save(compressed_data_pos);
 
             std::cout << "encoder pos = " << compressed_data_pos - compressed_data << std::endl;
             for(int i=0; i<all_inds.size(); i++){
@@ -166,6 +151,9 @@ namespace SZ {
             PatternPredictor<T> predictor = PatternPredictor<T>(pattern_repeated_times, pattern_size);
             size_t compressed_predictor_size = 0;
             read(compressed_predictor_size, compressed_data_pos, remaining_length);
+            Quantizer quantizer(eb, radius);
+            Quantizer pattern_quantizer(pattern_eb, radius);
+            Quantizer scale_quantizer(scale_eb, radius);
             std::cout << "predictor pos = " << compressed_data_pos - compressed_data << std::endl;
             std::cout << num_patterns << " " << pattern_repeated_times << " " << pattern_size << std::endl;
             std::cout << compressed_predictor_size << std::endl;
@@ -174,11 +162,8 @@ namespace SZ {
             std::cout << "skip predictors with size " << compressed_predictor_size << std::endl;
 
             std::cout << "quantizer pos = " << compressed_data_pos - compressed_data << std::endl;
-            Quantizer pattern_quantizer(pattern_eb);
-            Quantizer scale_quantizer(scale_eb);
             pattern_quantizer.load(compressed_data_pos, remaining_length);
             scale_quantizer.load(compressed_data_pos, remaining_length);
-            quantizer.load(compressed_data_pos, remaining_length);
             std::cout << "encoder pos = " << compressed_data_pos - compressed_data << std::endl;
             encoder.load(compressed_data_pos, remaining_length);
             std::cout << num_elements << " loading finished\n";
@@ -202,29 +187,18 @@ namespace SZ {
             size_t quant_count = 0;
             std::vector<T> pattern(pattern_size);
             for(int i=0; i<num_patterns; i++){
+                // std::cout << i << " " << compressed_predictor_pos - compressed_data << std::endl;
+                // quantizer.load(compressed_predictor_pos, remaining_length);
+                quantizer.load(compressed_predictor_pos, remaining_length);
                 // recover pattern
                 for(int j=0; j<pattern_size; j++){
                     pattern[j] = pattern_quantizer.recover(0, pattern_inds[pattern_quant_count ++]);
-                }
-                if(i == 0){
-                    for(int j=0; j<pattern.size(); j++){
-                        std::cout << pattern[j] << " ";
-                    }
-                    std::cout << std::endl;
                 }
                 for(int j=0; j<pattern_repeated_times; j++){
                     T scale = scale_quantizer.recover(0, scale_inds[scale_quant_count ++]);
                     for(int k=0; k<pattern_size; k++){
                         dec_data[quant_count] = quantizer.recover(scale * pattern[k], quant_inds[quant_count]);
                         quant_count ++;
-                    }
-                    if(i == 0 && j == 0){
-                        std::cout << "scale = " << scale << std::endl;
-                        std::cout << "scale_quant = " << scale_inds[scale_quant_count - 1] << std::endl;
-                        for(int k=0; k<pattern_size; k++){
-                            std::cout << dec_data[quant_count - pattern_size + k] << " ";
-                        }
-                        std::cout << std::endl;
                     }
                 }
             }
@@ -235,7 +209,6 @@ namespace SZ {
 
 
     private:
-        Quantizer quantizer;
         Encoder encoder;
         Lossless lossless;
         size_t num_elements;
@@ -245,19 +218,20 @@ namespace SZ {
         size_t pattern_repeated_times;
         // number of data points in a pattern
         size_t pattern_size;
+        int quant_bin;
+        T eb;
         T pattern_eb;
         T scale_eb;
     };
 
-    template<class T, uint N, class Quantizer, class Encoder, class Lossless>
-    GAMESS_Pattern_Based_Compressor<T, N, Quantizer, Encoder, Lossless>
-    make_sz_pastri_compressor(const Config<T, N> &conf, Quantizer quantizer, Encoder encoder,
+    template<class T, uint N, class Encoder, class Lossless>
+    GAMESS_Pattern_Based_Compressor<T, N, Encoder, Lossless>
+    make_sz_pastri_compressor(const Config<T, N> &conf, Encoder encoder,
                                Lossless lossless) {
         // Deal with 1D GAMESS data only in this implementation
         // Multidimensional data can be processed with linearization
         assert(N == 1);
-        return GAMESS_Pattern_Based_Compressor<T, N, Quantizer, Encoder, Lossless>(conf, quantizer, encoder,
-                                                                                    lossless);
+        return GAMESS_Pattern_Based_Compressor<T, N, Encoder, Lossless>(conf, encoder, lossless);
     }
 }
 #endif

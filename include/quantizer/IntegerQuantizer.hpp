@@ -191,10 +191,74 @@ namespace SZ {
     template<class T>
     class PastriQuantizer : public LinearQuantizer<T> {
     public:
-        PastriQuantizer(T eb, int r = 32768) : LinearQuantizer<T>(eb, r) {}
+        class BitEncoder{
+        public:
+            BitEncoder(uint64_t * stream_begin_pos){
+                stream_begin = stream_begin_pos;
+                stream_pos = stream_begin;
+                buffer = 0;
+                position = 0;
+            }
+            void encode(uint64_t b){
+                buffer += b << position;
+                position ++;
+                if(position == 64){
+                    *(stream_pos ++) = buffer;
+                    buffer = 0;
+                    position = 0;
+                }
+            }
+            void flush(){
+                if(position){
+                    *(stream_pos ++) = buffer;
+                    buffer = 0;
+                    position = 0;
+                }
+            }
+            uint32_t size(){
+                return (stream_pos - stream_begin);
+            }
+        private:
+            uint64_t buffer = 0;
+            uint8_t position = 0;
+            uint64_t * stream_pos = NULL;
+            uint64_t * stream_begin = NULL;
+        };
+
+        class BitDecoder{
+        public:
+            BitDecoder(uint64_t const * stream_begin_pos){
+                stream_begin = stream_begin_pos;
+                stream_pos = stream_begin;
+                buffer = 0;
+                position = 0;
+            }
+            uint64_t decode(){
+                if(position == 0){
+                    buffer = *(stream_pos ++);
+                    position = 64;
+                }
+                uint64_t b = buffer & 1u;
+                buffer >>= 1;
+                position --;
+                return b;
+            }
+            uint32_t size(){
+                return (stream_pos - stream_begin);
+            }
+        private:
+            uint64_t buffer = 0;
+            uint8_t position = 0;
+            uint64_t const * stream_pos = NULL;
+            uint64_t const * stream_begin = NULL;
+        };
+        PastriQuantizer(T eb, int r = 32768) : LinearQuantizer<T>(eb, r) {
+            eb_exp = 0;
+            frexp(eb, &eb_exp);
+            eb_exp -= 1;            
+        }
 
         inline int quantize_and_overwrite(T &data, T pred) {
-
             T diff = data - pred;
             int quant_index = (int) (fabs(diff) * this->error_bound_reciprocal) + 1;
             if ((quant_index >= 0) && (quant_index < this->radius * 2)) {
@@ -217,9 +281,30 @@ namespace SZ {
                     return quant_index_shifted;
                 }
             } else {
-                // std::cout << data << " " << diff << std::endl;
                 // unpred.push_back(data);
                 this->unpred.push_back(diff);
+                // if(this->unpred.size() == 1){
+                //     uint64_t * tmp = reinterpret_cast<uint64_t*>(&diff);
+                //     std::bitset<64> x(*tmp);
+                //     std::cout << x << std::endl;
+                // }
+                int data_exp = 0;
+                frexp(diff, &data_exp);
+                int num_bitplanes = data_exp - eb_exp;
+                // TODO: add 32 bit
+                if(num_bitplanes < 53){
+                    unsigned char shift_bits = 53 - num_bitplanes;
+                    uint64_t * tmp = reinterpret_cast<uint64_t*>(&diff);
+                    (*tmp) = ((*tmp) >> shift_bits) << shift_bits;
+                }
+                // if(this->unpred.size() == 1){
+                //     uint64_t * tmp = reinterpret_cast<uint64_t*>(&diff);
+                //     std::bitset<64> x(*tmp);
+                //     std::cout << x << std::endl;                    
+                //     printf("%.20f\n", diff);
+                // }
+                // if(this->unpred.size() == 1) std::cout << pred + diff - data << std::endl;
+                data = pred + diff;
                 return 0;
             }
         }
@@ -227,198 +312,166 @@ namespace SZ {
             if (quant_index) {
                 return pred + 2 * (quant_index - this->radius) * this->error_bound;
             } else {
+                // if(this->index == 0){
+                //     uint64_t * tmp = reinterpret_cast<uint64_t*>(&this->unpred[this->index]);
+                //     std::bitset<64> x(*tmp);
+                //     std::cout << x << std::endl;                                        
+                //     printf("%.20f\n", this->unpred[this->index]);
+                // }
                 return pred + this->unpred[this->index++];
             }
         }
-
-        void save(unsigned char *&c) const {
-            uchar* tmp = c;
-            // std::string serialized(sizeof(uint8_t) + sizeof(T) + sizeof(int),0);
-            c[0] = 0b00000010;
-            c += sizeof(uchar);
-            *reinterpret_cast<T *>(c) = this->error_bound;
-            c += sizeof(T);
-            *reinterpret_cast<int *>(c) = this->radius;
-            c += sizeof(int);
-            const std::vector<T>& unpred = this->unpred;
-            *reinterpret_cast<size_t *>(c) = unpred.size();
+        // save unpredictable data in each block
+        void save(unsigned char *&c) {
+            *reinterpret_cast<size_t *>(c) = this->unpred.size();
             c += sizeof(size_t);
-            if(unpred.size()){
-                std::cout << "unpredictable size = " << this->unpred.size() << std::endl;
-                std::vector<uchar> sign(unpred.size());
-                T max_val = 0;
-                for(int i=0; i<unpred.size(); i++){
-                    if(max_val < fabs(unpred[i])){
-                        max_val = unpred[i];
-                    }
-                    sign[i] = (unpred[i] < 0);
-                }
-                uchar buffer = 0;
-                int bit_position = 7;
-                // record sign
-                std::cout << "Recorded size before sign = " << c - tmp << std::endl;
-                for(int i=0; i<unpred.size(); i++){
-                    buffer += sign[i] << bit_position;
-                    bit_position --;
-                    if(bit_position < 0){
-                        bit_position = 7;
-                        *(c++) = buffer;
-                        buffer = 0;
-                    }
-                }
-                // flush
-                if(bit_position != 7) *(c++) = buffer;
-                // record mantissa
-                std::cout << "Recorded size after sign = " << c - tmp << std::endl;
-                int aligned_exp = 0;
-                frexp(max_val, &aligned_exp);
-                int eb_exp = 0;
-                frexp(this->error_bound, &eb_exp);
-                // number of bits recorded per data
-                int num_bits = aligned_exp - eb_exp + 1;
-                *reinterpret_cast<int*>(c) = aligned_exp;
-                c += sizeof(int);
-                std::cout << "aligned_exp = " << aligned_exp << std::endl;
-                std::cout << "Recorded size after exp = " << c - tmp << std::endl;
-                std::cout << "num_bits = " << num_bits << ", num_data = " << unpred.size() << std::endl;
-                uint64_t mantissa_buffer = 0;
-                std::vector<uint64_t> fix_points(unpred.size());
-                for(int i=0; i<unpred.size(); i++){
-                    T cur_data = sign[i] ? -unpred[i] : unpred[i];
-                    T shifted_data = ldexp(cur_data, num_bits - 1);
-                    fix_points[i] = (uint64_t) shifted_data;
-                }
-                std::cout << "unpred[0] = " << unpred[0] << std::endl;
-                size_t compact_size = compact(fix_points, num_bits, reinterpret_cast<uint64_t*>(c));
-                c += compact_size;
-                std::cout << "Recorded size = " << c - tmp << std::endl;
-            }
+            embedded_encoding(c);
+            this->unpred.clear();            
         }
+        // load unpredictable data in each block
         void load(const unsigned char *&c, size_t &remaining_length) {
-            const uchar* tmp = c;
-            c += sizeof(uchar);
-            this->error_bound = *reinterpret_cast<const T *>(c);
-            std::cout << "eb = " << this->error_bound << std::endl;
-            this->error_bound_reciprocal = 1.0 / this->error_bound;
-            c += sizeof(T);
-            this->radius = *reinterpret_cast<const int *>(c);
-            c += sizeof(int);
+            std::vector<T>& unpred = this->unpred;
+            unpred.clear();
             size_t unpred_size = *reinterpret_cast<const size_t *>(c);
             c += sizeof(size_t);
+            unpred = std::vector<T>(unpred_size);
+            if(unpred_size) embedded_decoding(c, unpred_size);
+            this->index = 0;
+        }
+        void save_ori(unsigned char *&c) {
             std::vector<T>& unpred = this->unpred;
-            unpred = std::vector<T>(unpred_size, 0);
-            if(unpred_size){
-                // recover sign
-                std::cout << "Recorded size before sign = " << c - tmp << std::endl;
-                std::vector<bool> sign(unpred_size);
-                uchar buffer = *(c++);
-                int bit_position = 7;
-                for(int i=0; i<unpred_size; i++){
-                    sign[i] = (buffer >> bit_position) & 1u;
-                    bit_position --;
-                    if((bit_position < 0) && (i+1 != unpred_size)){
-                        buffer = *(c++);
-                        bit_position = 7;
-                    }
-                }
-                std::cout << "Recorded size after sign = " << c - tmp << std::endl;
-                // recover data            
-                int aligned_exp = *reinterpret_cast<const int*>(c);
-                c += sizeof(int);
-                std::cout << "aligned_exp = " << aligned_exp << std::endl;
-                std::cout << "Recorded size after exp = " << c - tmp << std::endl;
-                int eb_exp = 0;
-                frexp(this->error_bound, &eb_exp);
-                // number of bits recorded per data
-                int num_bits = aligned_exp - eb_exp + 1;
-                std::vector<uint64_t> fix_points = decompact<uint64_t>(reinterpret_cast<const uint64_t*>(c), unpred_size, num_bits);
-                for(int i=0; i<unpred_size; i++){
-                    T cur_data = ldexp((T)fix_points[i], -num_bits + 1);
-                    unpred[i] = sign[i] ? -cur_data : cur_data;
-                }
-                std::cout << "unpred[0] = " << unpred[0] << std::endl;
-                c += compute_compact_size(unpred_size, num_bits);
-                std::cout << "Recorded size = " << c - tmp << std::endl;
-            }
+            *reinterpret_cast<size_t *>(c) = unpred.size();
+            c += sizeof(size_t);
+            memcpy(c, unpred.data(), unpred.size() * sizeof(T));
+            c += unpred.size() * sizeof(T);
+            unpred.clear();            
+        }
+        void load_ori(const unsigned char *&c, size_t &remaining_length) {
+            std::vector<T>& unpred = this->unpred;
+            unpred.clear();
+            this->index = 0;
+            size_t unpred_size = *reinterpret_cast<const size_t *>(c);
+            c += sizeof(size_t);
+            unpred = std::vector<T>(reinterpret_cast<const T *>(c), reinterpret_cast<const T *>(c) + unpred_size);
+            c += unpred_size * sizeof(T);
         }
     private:
-        template<class T1>
-        std::vector<T1> get_mask_array() const{
-            std::vector<T1> mask = std::vector<T1>(sizeof(T1) * UINT64_BITS + 1, 0);
-            T1 m = 1;
-            for(int i=1; i<mask.size(); i++){
-                mask[i] = m;
-                m = (m << 1) + 1;
+        void embedded_encoding(unsigned char* &c){
+            auto tmp = c;
+            const int block_size = 32;
+            size_t n = this->unpred.size();
+            if(n == 0) return;
+            const T * data = this->unpred.data();
+            uint64_t int_data_buffer[block_size];
+            unsigned char * encoded_sign_pos = c;
+            unsigned char * encoded_data_pos = c + (((n - 1) / 64 + 1) * 8);
+            T max_val = 0;
+            for(int i=0; i<n; i++){
+                if(fabs(data[i]) > max_val){
+                    max_val = fabs(data[i]);
+                }
             }
-            return mask;
+            int data_exp = 0;
+            frexp(max_val, &data_exp);
+            const int num_bitplanes = data_exp - eb_exp;
+            // std::cout << data_exp << " " << eb_exp << ", num_bitplanes = " << num_bitplanes << std::endl;
+            // encode exponent
+            *reinterpret_cast<int *>(encoded_data_pos) = num_bitplanes;
+            encoded_data_pos += sizeof(int);
+            const T * data_pos = data;
+            BitEncoder sign_encoder(reinterpret_cast<uint64_t*>(encoded_sign_pos));
+            BitEncoder data_encoder(reinterpret_cast<uint64_t*>(encoded_data_pos));
+            int i = 0;
+            // std::cout << n << ", sign bytes = " << (((n - 1) / 64 + 1) * 8) << "\n";
+            if(n >= block_size){
+                for(; i<n - block_size; i+=block_size){
+                    for(int j=0; j<block_size; j++){
+                        T cur_data = *(data_pos++);
+                        T shifted_data = ldexp(cur_data, num_bitplanes - data_exp);
+                        int64_t fix_point = (int64_t) shifted_data;
+                        bool sign = cur_data < 0;
+                        int_data_buffer[j] = sign ? -fix_point : +fix_point;
+                        sign_encoder.encode(sign);
+                    }
+                    for(int k=num_bitplanes - 1; k>=0; k--){
+                        for (int j=0; j<block_size; j++){
+                            bool bit = (int_data_buffer[j] >> k) & 1u;
+                            data_encoder.encode(bit);
+                        }
+                    }
+                }
+            }
+            // rest
+            if(i != n){
+                int rest_size = n - i;
+                for(int j=0; j<rest_size; j++){
+                    T cur_data = *(data_pos++);
+                    T shifted_data = ldexp(cur_data, num_bitplanes - data_exp);
+                    int64_t fix_point = (int64_t) shifted_data;
+                    uint32_t sign = cur_data < 0;
+                    int_data_buffer[j] = sign ? -fix_point : +fix_point;
+                    sign_encoder.encode(sign);
+                }
+                for(int k=num_bitplanes - 1; k>=0; k--){
+                    for (int j=0; j<rest_size; j++){
+                        bool bit = (int_data_buffer[j] >> k) & 1u;
+                        data_encoder.encode(bit);
+                    }
+                }
+            }
+            sign_encoder.flush();
+            data_encoder.flush();
+            c = reinterpret_cast<unsigned char*>(encoded_data_pos + data_encoder.size() * 8);
+        }
+        void embedded_decoding(const unsigned char * &c, size_t unpred_size){
+            auto tmp = c;
+            const int block_size = 32;
+            T * data = this->unpred.data();
+            size_t n = unpred_size;
+            uint64_t int_data_buffer[block_size];
+            const unsigned char * encoded_sign_pos = c;
+            const unsigned char * encoded_data_pos = c + (((n - 1) / 64 + 1) * 8);
+            int num_bitplanes = *reinterpret_cast<const int*>(encoded_data_pos);
+            encoded_data_pos += sizeof(int);
+            BitDecoder sign_decoder(reinterpret_cast<const uint64_t*>(encoded_sign_pos));
+            BitDecoder data_decoder(reinterpret_cast<const uint64_t*>(encoded_data_pos));
+            T * data_pos = data;
+            int i = 0;
+            if(n >= block_size){
+                for(; i<n - block_size; i+=block_size){
+                    memset(int_data_buffer, 0, block_size * sizeof(uint64_t));
+                    for(int k=num_bitplanes - 1; k>=0; k--){
+                        for (int j=0; j<block_size; j++){
+                            int_data_buffer[j] += data_decoder.decode() << k;
+                        }
+                    }
+                    for(int j=0; j<block_size; j++){
+                        bool sign = sign_decoder.decode();
+                        T cur_data = ldexp((T)int_data_buffer[j], eb_exp);
+                        *(data_pos++) = sign ? -cur_data : cur_data;
+                    }
+                }
+            }
+            // rest
+            if(i != n){
+                int rest_size = n - i;
+                memset(int_data_buffer, 0, rest_size * sizeof(uint64_t));
+                for(int k=num_bitplanes - 1; k>=0; k--){
+                    for (int j=0; j<rest_size; j++){
+                        int_data_buffer[j] += data_decoder.decode() << k;
+                    }
+                }
+                for(int j=0; j<rest_size; j++){
+                    bool sign = sign_decoder.decode();
+                    T cur_data = ldexp((T)int_data_buffer[j], eb_exp);
+                    *(data_pos++) = sign ? -cur_data : cur_data;
+                }
+            }
+            c = encoded_data_pos + data_decoder.size() * 8;
         }
 
-        inline size_t compute_compact_size(size_t size, size_t index_size) const{
-            return ((size * index_size - 1) / UINT64_BITS + 1) * (UINT64_BITS / UINT8_BITS);
-        }
-        /* 
-        @params encoded: addresses of encoded bitplanes
-        @params offset: position of encoded bitplanes
-        return compact array
-        */
-        template<class T1>
-        size_t compact(const std::vector<T1>& data, uint64_t index_size, uint64_t * compact_data) const{
-            static_assert(std::is_unsigned<T1>::value, "codec_utils compact: input array must be unsigned integers.");
-            static_assert(std::is_integral<T1>::value, "codec_utils compact: input array must be unsigned integers.");
-            auto mask = get_mask_array<T1>();
-            uint64_t * compact_data_pos = compact_data;
-            uint64_t buffer = 0;
-            uint8_t rest_bits = UINT64_BITS;
-            for(int i=0; i<data.size(); i++){
-                T1 cur_data = data[i];
-                if(index_size <= rest_bits){
-                    rest_bits -= index_size;
-                    buffer <<= index_size;
-                    buffer += cur_data;
-                }
-                else{
-                    buffer <<= rest_bits;
-                    buffer += cur_data >> (index_size - rest_bits);
-                    *(compact_data_pos ++) = buffer;
-                    buffer = cur_data & mask[index_size - rest_bits];
-                    rest_bits = UINT64_BITS + rest_bits - index_size;
-                }
-            }
-            // flush buffer
-            if(rest_bits != UINT64_BITS){
-                *(compact_data_pos ++) = buffer << rest_bits;
-            }
-            return compute_compact_size(data.size(), index_size);
-        }
-
-        template<class T1>
-        std::vector<T1> decompact(const uint64_t * compact_data, uint32_t size, uint64_t index_size) const{
-            static_assert(std::is_unsigned<T1>::value, "codec_utils decompact: input array must be unsigned integers.");
-            static_assert(std::is_integral<T1>::value, "codec_utils decompact: input array must be unsigned integers.");
-            auto mask = get_mask_array<uint64_t>();
-            std::vector<T1> data(size, 0);
-            const uint64_t * compact_data_pos = compact_data;
-            uint64_t buffer = 0;
-            uint8_t rest_bits = 0;
-            for(int i=0; i<size; i++){
-                T1 cur_data = 0;
-                if(index_size <= rest_bits){
-                    rest_bits -= index_size;
-                    cur_data = buffer >> rest_bits;
-                    buffer = buffer & mask[rest_bits];
-                }
-                else{
-                    cur_data = buffer << (index_size - rest_bits);
-                    buffer = *(compact_data_pos ++);
-                    rest_bits = UINT64_BITS + rest_bits - index_size;
-                    cur_data += buffer >> rest_bits;
-                    buffer = buffer & mask[rest_bits];
-                }
-                data[i] = cur_data;
-            }
-            return data;
-        }
-
+        // exponent for error bound
+        int eb_exp;
     };
 }
 #endif

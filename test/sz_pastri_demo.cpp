@@ -20,8 +20,7 @@ float SZ_Pastri_Compress(std::unique_ptr<T[]> const &data,
     clock_gettime(CLOCK_REALTIME, &start);
     std::cout << "****************** Compression ******************" << std::endl;
 
-    auto sz = SZ::make_sz_pastri_compressor(conf, SZ::PastriQuantizer<T>(conf.eb, conf.quant_bin),
-                                             SZ::HuffmanEncoder<int>(), SZ::Lossless_zstd());
+    auto sz = SZ::make_sz_pastri_compressor(conf, SZ::HuffmanEncoder<int>(), SZ::Lossless_zstd());
 
     size_t compressed_size = 0;
     std::unique_ptr<SZ::uchar[]> compressed;
