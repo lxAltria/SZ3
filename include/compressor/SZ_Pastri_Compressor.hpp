@@ -59,7 +59,6 @@ namespace SZ {
             // leave space for recording compressed predictor size
             uchar * compressed_predictor_pos = compressed_data_pos;
             compressed_data_pos += sizeof(size_t);
-            std::cout << "predictor pos = " << compressed_data_pos - compressed_data << std::endl;
             struct timespec start, end;
             clock_gettime(CLOCK_REALTIME, &start);
             const T * data_pos = data;
@@ -95,41 +94,26 @@ namespace SZ {
                       << (double) (end.tv_sec - start.tv_sec) + (double) (end.tv_nsec - start.tv_nsec) / (double) 1000000000
                       << "s" << std::endl;
             size_t compressed_predictor_size = compressed_data_pos - compressed_predictor_pos - sizeof(size_t);
-            std::cout << "skip quantizer with size " << compressed_predictor_size << std::endl;
             write(compressed_predictor_size, compressed_predictor_pos);
-            std::cout << "predictor pos = " << compressed_predictor_pos - compressed_data << std::endl;
 
             // quantizer.postcompress_data();
-            std::cout << "quantizer pos = " << compressed_data_pos - compressed_data << std::endl;
+            // std::cout << "quantizer pos = " << compressed_data_pos - compressed_data << std::endl;
             pattern_quantizer.save(compressed_data_pos);
             scale_quantizer.save(compressed_data_pos);
 
-            std::cout << "encoder pos = " << compressed_data_pos - compressed_data << std::endl;
-            for(int i=0; i<all_inds.size(); i++){
-                if((all_inds[i] < 0) || (all_inds[i] > 2 * quantizer.get_radius())){
-                    std::cout << i << " " << all_inds[i] << std::endl;
-                    exit(0);
-                }
-            }
+            // std::cout << "encoder pos = " << compressed_data_pos - compressed_data << std::endl;
             auto encode_pos = compressed_data_pos;
             encoder.preprocess_encode(all_inds, 4 * quantizer.get_radius());
             encoder.save(compressed_data_pos);
             encoder.encode(all_inds, compressed_data_pos);
             encoder.postprocess_encode();
 
-            std::cout << "before lossless size = " << compressed_data_pos - compressed_data << std::endl;
+            // std::cout << "before lossless size = " << compressed_data_pos - compressed_data << std::endl;
             uchar *lossless_data = lossless.compress(compressed_data,
                                                      compressed_data_pos - compressed_data,
                                                      compressed_size);
-            {
-                size_t quant_size = 0;
-                uchar * buffer = lossless.compress(encode_pos, compressed_data_pos - encode_pos,
-                                                     quant_size);
-                std::cout << "quant index size = " << quant_size << std::endl;
-                free(buffer);
-            }
             lossless.postcompress_data(compressed_data);
-            std::cout << "lossless size = " << compressed_size << std::endl;
+            // std::cout << "lossless size = " << compressed_size << std::endl;
             return lossless_data;
         }
 
@@ -154,20 +138,18 @@ namespace SZ {
             Quantizer quantizer(eb, radius);
             Quantizer pattern_quantizer(pattern_eb, radius);
             Quantizer scale_quantizer(scale_eb, radius);
-            std::cout << "predictor pos = " << compressed_data_pos - compressed_data << std::endl;
-            std::cout << num_patterns << " " << pattern_repeated_times << " " << pattern_size << std::endl;
-            std::cout << compressed_predictor_size << std::endl;
+            // std::cout << "predictor pos = " << compressed_data_pos - compressed_data << std::endl;
+            // std::cout << num_patterns << " " << pattern_repeated_times << " " << pattern_size << std::endl;
             uchar const *compressed_predictor_pos = compressed_data_pos;
             compressed_data_pos += compressed_predictor_size;
-            std::cout << "skip predictors with size " << compressed_predictor_size << std::endl;
 
-            std::cout << "quantizer pos = " << compressed_data_pos - compressed_data << std::endl;
+            // std::cout << "quantizer pos = " << compressed_data_pos - compressed_data << std::endl;
             pattern_quantizer.load(compressed_data_pos, remaining_length);
             scale_quantizer.load(compressed_data_pos, remaining_length);
-            std::cout << "encoder pos = " << compressed_data_pos - compressed_data << std::endl;
+            // std::cout << "encoder pos = " << compressed_data_pos - compressed_data << std::endl;
             encoder.load(compressed_data_pos, remaining_length);
-            std::cout << num_elements << " loading finished\n";
-            fflush(stdout);
+            // std::cout << num_elements << " loading finished\n";
+            // fflush(stdout);
 
             auto all_inds = encoder.decode(compressed_data_pos, num_elements + num_patterns * pattern_size + num_patterns * pattern_repeated_times);
 
@@ -176,12 +158,11 @@ namespace SZ {
             int const *quant_inds = scale_inds + num_patterns * pattern_repeated_times;
             encoder.postprocess_decode();
             lossless.postdecompress_data(compressed_data);
-            std::cout << "before lossless size = " << compressed_data_pos - compressed_data << std::endl;
+            // std::cout << "before lossless size = " << compressed_data_pos - compressed_data << std::endl;
 
             auto dec_data = std::make_unique<T[]>(num_elements);
             // quantizer.predecompress_data();
-            std::cout << "start decompression" << std::endl;
-            std::cout << "all_inds size = " << all_inds.size() << std::endl;
+            // std::cout << "start decompression" << std::endl;
             size_t pattern_quant_count = 0;
             size_t scale_quant_count = 0;
             size_t quant_count = 0;
@@ -202,7 +183,7 @@ namespace SZ {
                     }
                 }
             }
-            std::cout << pattern_quant_count << " " << scale_quant_count << " " << quant_count << std::endl;
+            // std::cout << pattern_quant_count << " " << scale_quant_count << " " << quant_count << std::endl;
             // quantizer.postdecompress_data();
             return dec_data.release();
         }
