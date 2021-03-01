@@ -49,6 +49,7 @@ namespace SZ {
             for(int i=0; i<pattern_size; i++){
                 pattern[i] = (fabs(data[offset + i]) < 1e-10) ? 0 : data[offset + i];
             }
+            // max_pattern_id = id;
             // data_pos = data;
             // ptrdiff_t offset = id * pattern_size;
             // int count = 0;
@@ -85,8 +86,8 @@ namespace SZ {
         }
         // compute slope and intercept for current window
         T compute_scale(const T * data, const T * pattern){
-            // if(!patterns[max_pattern_id]) return 0;
-            // return data[max_pattern_id] / patterns[max_pattern_id];
+            // if(!pattern[max_pattern_id]) return 0;
+            // return data[max_pattern_id] / pattern[max_pattern_id];
             T sigma_x2 = 0; // sum of x^2
             T sigma_xy = 0; // sum of xy
             for(int i=0; i<pattern_size; i++){
@@ -124,23 +125,6 @@ namespace SZ {
         void clear() {}
 
     private:
-        // void compute_max_pattern_id(const T * pattern){
-        //     T max_pattern_value = 0;
-        //     for(int i=0; i<pattern_size; i++){
-        //         if(max_pattern_value < pattern[i]){
-        //             max_pattern_value = pattern[i];
-        //             max_pattern_id = i;
-        //         }
-        //     }            
-        // }
-        // double compute_pattern_error(const T * data, const T * pattern){
-        //     T scale = compute_pattern_scale(data, pattern);
-        //     double err = 0;
-        //     for(int j=0; j<pattern_size; j++){
-        //         err += (data[j] - scale * pattern[j])*(data[j] - scale * pattern[j]);
-        //     }
-        //     return err;            
-        // }
         // int max_pattern_id = 0;
         size_t pattern_repeated_times, pattern_size = 0;
     };
