@@ -17,7 +17,8 @@ namespace SZ {
     template<class T, size_t N, class Encoder, class Lossless>
     class GAMESS_Pattern_Based_Compressor {
     public:
-        using Quantizer = PastriQuantizer<T>; 
+        using Quantizer = PastriQuantizer<T>;
+        using CoefficientQuantizer = PastriQuantizer<T>;
         GAMESS_Pattern_Based_Compressor(const Config<T, N> &conf, Encoder encoder, Lossless lossless) :
                 encoder(encoder), lossless(lossless), num_elements(conf.num), 
                 eb(conf.eb), quant_bin(conf.quant_bin), pattern_eb(conf.pattern_eb), scale_eb(conf.scale_eb), 
@@ -50,8 +51,8 @@ namespace SZ {
             write(radius, compressed_data_pos);
             write(pattern_eb, compressed_data_pos);
             write(scale_eb, compressed_data_pos);
-            Quantizer pattern_quantizer(pattern_eb, radius);
-            Quantizer scale_quantizer(scale_eb, radius);
+            CoefficientQuantizer pattern_quantizer(pattern_eb, radius);
+            CoefficientQuantizer scale_quantizer(scale_eb, radius);
             std::vector<int> all_inds(num_elements + num_patterns * pattern_size + num_patterns * pattern_repeated_times);
             int * pattern_quant_inds = all_inds.data();
             int * scale_quant_inds = pattern_quant_inds + num_patterns * pattern_size;
@@ -88,10 +89,11 @@ namespace SZ {
                     scale_quant_inds[scale_quant_count ++] = scale_quantizer.quantize_and_overwrite(scale, 0);
                     for(int k=0; k<pattern_size; k++){
                         T cur_data = *(data_pos++);
-                        quant_inds[quant_count] = quantizer.quantize_and_overwrite(cur_data, scale * pattern[k]);
+                        quant_inds[quant_count] = quantizer.quantize(cur_data, scale * pattern[k]);
                         quant_count ++;
                     }
                 }
+                // std::cout << i << " " << compressed_data_pos - compressed_data << std::endl;
                 clock_gettime(CLOCK_REALTIME, &start_unpred);
                 quantizer.save(compressed_data_pos);
                 clock_gettime(CLOCK_REALTIME, &end_unpred);
@@ -158,8 +160,8 @@ namespace SZ {
             size_t compressed_predictor_size = 0;
             read(compressed_predictor_size, compressed_data_pos, remaining_length);
             Quantizer quantizer(eb, radius);
-            Quantizer pattern_quantizer(pattern_eb, radius);
-            Quantizer scale_quantizer(scale_eb, radius);
+            CoefficientQuantizer pattern_quantizer(pattern_eb, radius);
+            CoefficientQuantizer scale_quantizer(scale_eb, radius);
             // std::cout << "predictor pos = " << compressed_data_pos - compressed_data << std::endl;
             // std::cout << num_patterns << " " << pattern_repeated_times << " " << pattern_size << std::endl;
             uchar const *compressed_predictor_pos = compressed_data_pos;

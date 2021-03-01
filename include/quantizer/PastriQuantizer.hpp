@@ -14,67 +14,6 @@ namespace SZ {
     template<class T>
     class PastriQuantizer : public LinearQuantizer<T> {
     public:
-        class BitEncoder{
-        public:
-            BitEncoder(uint64_t * stream_begin_pos){
-                stream_begin = stream_begin_pos;
-                stream_pos = stream_begin;
-                buffer = 0;
-                position = 0;
-            }
-            void encode(uint64_t b){
-                buffer += b << position;
-                position ++;
-                if(position == 64){
-                    *(stream_pos ++) = buffer;
-                    buffer = 0;
-                    position = 0;
-                }
-            }
-            void flush(){
-                if(position){
-                    *(stream_pos ++) = buffer;
-                    buffer = 0;
-                    position = 0;
-                }
-            }
-            uint32_t size(){
-                return (stream_pos - stream_begin);
-            }
-        private:
-            uint64_t buffer = 0;
-            uint8_t position = 0;
-            uint64_t * stream_pos = NULL;
-            uint64_t * stream_begin = NULL;
-        };
-
-        class BitDecoder{
-        public:
-            BitDecoder(uint64_t const * stream_begin_pos){
-                stream_begin = stream_begin_pos;
-                stream_pos = stream_begin;
-                buffer = 0;
-                position = 0;
-            }
-            uint64_t decode(){
-                if(position == 0){
-                    buffer = *(stream_pos ++);
-                    position = 64;
-                }
-                uint64_t b = buffer & 1u;
-                buffer >>= 1;
-                position --;
-                return b;
-            }
-            uint32_t size(){
-                return (stream_pos - stream_begin);
-            }
-        private:
-            uint64_t buffer = 0;
-            uint8_t position = 0;
-            uint64_t const * stream_pos = NULL;
-            uint64_t const * stream_begin = NULL;
-        };
         PastriQuantizer(T eb, int r = 32768) : LinearQuantizer<T>(eb, r) {
             eb_exp = 0;
             frexp(eb, &eb_exp);
@@ -85,11 +24,21 @@ namespace SZ {
             T diff = data - pred;
             if(diff > 0){
                 int quant_index = (int) (diff * this->error_bound_reciprocal) + 1;
-                return (quant_index >> 1) + this->radius;
+                quant_index >>= 1;
+                if(quant_index < this->radius) return quant_index + this->radius;
+                else{
+                    this->unpred.push_back(diff);
+                    return 0;
+                }
             }
             else{
                 int quant_index = (int) (diff * this->error_bound_reciprocal) - 1;
-                return (quant_index / 2) + this->radius;
+                quant_index /= 2;
+                if(quant_index + this->radius > 0) return quant_index + this->radius;
+                else{
+                    this->unpred.push_back(diff);
+                    return 0;
+                }
             }
         }
 
@@ -133,6 +82,7 @@ namespace SZ {
         }
         // save unpredictable data in each block
         void save(unsigned char *&c) {
+            auto tmp = c;
             *reinterpret_cast<size_t *>(c) = this->unpred.size();
             c += sizeof(size_t);
             embedded_encoding(c);
@@ -150,14 +100,9 @@ namespace SZ {
         }
     private:
         void embedded_encoding(unsigned char* &c){
-            auto tmp = c;
-            const int block_size = 32;
             size_t n = this->unpred.size();
             if(n == 0) return;
             const T * data = this->unpred.data();
-            uint64_t int_data_buffer[block_size];
-            unsigned char * encoded_sign_pos = c;
-            unsigned char * encoded_data_pos = c + (((n - 1) / 64 + 1) * 8);
             T max_val = 0;
             for(int i=0; i<n; i++){
                 if(fabs(data[i]) > max_val){
@@ -168,80 +113,90 @@ namespace SZ {
             frexp(max_val, &data_exp);
             const int num_bitplanes = data_exp - eb_exp;
             // std::cout << data_exp << " " << eb_exp << ", num_bitplanes = " << num_bitplanes << std::endl;
+            const T * data_pos = data;
+            const int block_size = 32;
+            uint64_t int_data_buffer[block_size];
+            unsigned char * encoded_sign_pos = c;
+            unsigned char * encoded_data_pos = c + (((n - 1) / block_size + 1) * (block_size / 8));
+            // std::cout << "encoded_sign_pos = " << encoded_data_pos - c << std::endl;
             // encode exponent
             *reinterpret_cast<int *>(encoded_data_pos) = num_bitplanes;
             encoded_data_pos += sizeof(int);
-            const T * data_pos = data;
-            BitEncoder sign_encoder(reinterpret_cast<uint64_t*>(encoded_sign_pos));
-            BitEncoder data_encoder(reinterpret_cast<uint64_t*>(encoded_data_pos));
+            uint32_t * encoded_int_sign_pos = reinterpret_cast<uint32_t*>(encoded_sign_pos);
+            uint32_t * encoded_int_data_pos = reinterpret_cast<uint32_t*>(encoded_data_pos);
             int i = 0;
-            // std::cout << n << ", sign bytes = " << (((n - 1) / 64 + 1) * 8) << "\n";
             if(n >= block_size){
                 for(; i<n - block_size; i+=block_size){
+                    uint32_t sign_bitplane = 0;
                     for(int j=0; j<block_size; j++){
                         T cur_data = *(data_pos++);
                         T shifted_data = ldexp(cur_data, num_bitplanes - data_exp);
                         int64_t fix_point = (int64_t) shifted_data;
                         bool sign = cur_data < 0;
                         int_data_buffer[j] = sign ? -fix_point : +fix_point;
-                        sign_encoder.encode(sign);
+                        sign_bitplane += sign << j;
                     }
+                    *(encoded_int_sign_pos ++) = sign_bitplane;
                     for(int k=num_bitplanes - 1; k>=0; k--){
+                        uint32_t bitplane_value = 0;
                         for (int j=0; j<block_size; j++){
-                            bool bit = (int_data_buffer[j] >> k) & 1u;
-                            data_encoder.encode(bit);
+                            bitplane_value += (uint32_t)((int_data_buffer[j] >> k) & 1u) << j;
                         }
+                        *(encoded_int_data_pos ++) = bitplane_value;
                     }
                 }
             }
             // rest
             if(i != n){
                 int rest_size = n - i;
+                uint32_t sign_bitplane = 0;
                 for(int j=0; j<rest_size; j++){
                     T cur_data = *(data_pos++);
                     T shifted_data = ldexp(cur_data, num_bitplanes - data_exp);
                     int64_t fix_point = (int64_t) shifted_data;
                     uint32_t sign = cur_data < 0;
                     int_data_buffer[j] = sign ? -fix_point : +fix_point;
-                    sign_encoder.encode(sign);
+                    sign_bitplane += sign << j;
                 }
+                *(encoded_int_sign_pos ++) = sign_bitplane;
                 for(int k=num_bitplanes - 1; k>=0; k--){
+                    uint32_t bitplane_value = 0;
                     for (int j=0; j<rest_size; j++){
-                        bool bit = (int_data_buffer[j] >> k) & 1u;
-                        data_encoder.encode(bit);
+                        bitplane_value += (uint32_t)((int_data_buffer[j] >> k) & 1u) << j;
                     }
+                    *(encoded_int_data_pos ++) = bitplane_value;
                 }
             }
-            sign_encoder.flush();
-            data_encoder.flush();
-            c = reinterpret_cast<unsigned char*>(encoded_data_pos + data_encoder.size() * 8);
+            c = reinterpret_cast<unsigned char*>(encoded_int_data_pos);
         }
         void embedded_decoding(const unsigned char * &c, size_t unpred_size){
-            auto tmp = c;
-            const int block_size = 32;
             T * data = this->unpred.data();
+            if(unpred_size == 0) return;
             size_t n = unpred_size;
-            uint64_t int_data_buffer[block_size];
-            const unsigned char * encoded_sign_pos = c;
-            const unsigned char * encoded_data_pos = c + (((n - 1) / 64 + 1) * 8);
-            int num_bitplanes = *reinterpret_cast<const int*>(encoded_data_pos);
-            encoded_data_pos += sizeof(int);
-            BitDecoder sign_decoder(reinterpret_cast<const uint64_t*>(encoded_sign_pos));
-            BitDecoder data_decoder(reinterpret_cast<const uint64_t*>(encoded_data_pos));
             T * data_pos = data;
+            const int block_size = 32;
+            uint64_t int_data_buffer[block_size];
+            unsigned char const * encoded_sign_pos = c;
+            unsigned char const * encoded_data_pos = c + (((n - 1) / block_size + 1) * (block_size / 8));
+            // decode exponent
+            int num_bitplanes = *reinterpret_cast<int const*>(encoded_data_pos);
+            encoded_data_pos += sizeof(int);
+            uint32_t const * encoded_int_sign_pos = reinterpret_cast<uint32_t const*>(encoded_sign_pos);
+            uint32_t const * encoded_int_data_pos = reinterpret_cast<uint32_t const*>(encoded_data_pos);
             int i = 0;
             if(n >= block_size){
                 for(; i<n - block_size; i+=block_size){
                     memset(int_data_buffer, 0, block_size * sizeof(uint64_t));
                     for(int k=num_bitplanes - 1; k>=0; k--){
-                        for (int j=0; j<block_size; j++){
-                            int_data_buffer[j] += data_decoder.decode() << k;
+                        uint32_t bitplane_value = *(encoded_int_data_pos ++);
+                        for (int j=0; j<block_size; j++, bitplane_value >>= 1){
+                            int_data_buffer[j] += (uint64_t)(bitplane_value & 1u) << k;
                         }
                     }
-                    for(int j=0; j<block_size; j++){
-                        bool sign = sign_decoder.decode();
+                    uint32_t sign_bitplane = *(encoded_int_sign_pos ++);
+                    for(int j=0; j<block_size; j++, sign_bitplane >>= 1){
                         T cur_data = ldexp((T)int_data_buffer[j], eb_exp);
-                        *(data_pos++) = sign ? -cur_data : cur_data;
+                        *(data_pos++) = (sign_bitplane & 1u) ? -cur_data : cur_data;
                     }
                 }
             }
@@ -250,17 +205,18 @@ namespace SZ {
                 int rest_size = n - i;
                 memset(int_data_buffer, 0, rest_size * sizeof(uint64_t));
                 for(int k=num_bitplanes - 1; k>=0; k--){
-                    for (int j=0; j<rest_size; j++){
-                        int_data_buffer[j] += data_decoder.decode() << k;
+                    uint32_t bitplane_value = *(encoded_int_data_pos ++);
+                    for (int j=0; j<rest_size; j++, bitplane_value >>= 1){
+                        int_data_buffer[j] += (uint64_t)(bitplane_value & 1u) << k;
                     }
                 }
-                for(int j=0; j<rest_size; j++){
-                    bool sign = sign_decoder.decode();
+                uint32_t sign_bitplane = *(encoded_int_sign_pos ++);
+                for(int j=0; j<rest_size; j++, sign_bitplane >>= 1){
                     T cur_data = ldexp((T)int_data_buffer[j], eb_exp);
-                    *(data_pos++) = sign ? -cur_data : cur_data;
+                    *(data_pos++) = (sign_bitplane & 1u) ? -cur_data : cur_data;
                 }
             }
-            c = encoded_data_pos + data_decoder.size() * 8;
+            c = reinterpret_cast<unsigned char const*>(encoded_int_data_pos);
         }
 
         // exponent for error bound
