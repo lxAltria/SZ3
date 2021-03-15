@@ -3,11 +3,11 @@ project(SZ3)
 #project(First VERSION 3.0.0.0)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_FLAGS "-O3")
+set(CMAKE_CXX_FLAGS "-g -O3")
 include(GNUInstallDirs)
 
-find_library(ZSTD_LIBS zstd HINTS "$ENV{HOME}/tools/zstd-1.4.4/install/lib")
-set(ZSTD_INCLUDES "$ENV{HOME}/tools/zstd-1.4.4/install/include")
+find_library(ZSTD_LIBS zstd HINTS "${CMAKE_CURRENT_SOURCE_DIR}/external/SZ/install/lib")
+set(ZSTD_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/external/SZ/install/include")
 
 add_library(${PROJECT_NAME} INTERFACE)
 target_include_directories(

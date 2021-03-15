@@ -179,6 +179,7 @@ namespace SZ {
                 pred->clear();
             }
             selection.clear();
+            current_index = 0;
         }
 
     private:
