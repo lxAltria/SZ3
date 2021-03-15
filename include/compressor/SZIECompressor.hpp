@@ -12,6 +12,7 @@
 #include "utils/Config.hpp"
 #include "utils/FileUtil.h"
 #include "def.hpp"
+#include <climits>
 #include <cstring>
 
 namespace SZ {
