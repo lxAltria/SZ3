@@ -32,6 +32,12 @@ namespace SZ {
 
         uchar *compress(T *data, size_t &compressed_size) {
 
+            {
+                std::vector<size_t> offsets{1, 4992000, 19500};
+                std::vector<size_t> dims{19500, 256, 256};
+                transpose(data, dims, offsets);
+            }
+
             auto inter_block_range = std::make_shared<SZ::multi_dimensional_range<T, N>>(data,
                                                                                          std::begin(global_dimensions),
                                                                                          std::end(global_dimensions), stride, 0);
@@ -87,6 +93,13 @@ namespace SZ {
             std::cout << "est_pred_err = " << est_pred_err << std::endl;
             std::cout << "quant_ind_err = " << quant_ind_err << std::endl;
 
+            // transpose quantization index
+            // {
+            //     std::vector<size_t> offsets{1, 4992000, 19500};
+            //     std::vector<size_t> dims{19500, 256, 256};
+            //     transpose(quant_inds.data(), dims, offsets);             
+            // }
+
             // writefile("quant_inds.dat", quant_inds.data(), quant_inds.size());
             // writefile("quant_errs.dat", pred_err_vec.data(), pred_err_vec.size());
 
@@ -140,6 +153,13 @@ namespace SZ {
             encoder.postprocess_decode();
             lossless.postdecompress_data(compressed_data);
 
+            // transpose quantization index
+            // {
+            //     std::vector<size_t> offsets{1, 4992000, 19500};
+            //     std::vector<size_t> dims{19500, 256, 256};
+            //     transpose_inverse(quant_inds.data(), dims, offsets);
+            // }
+
             int const *quant_inds_pos = (int const *) quant_inds.data();
             std::array<size_t, N> intra_block_dims;
             auto dec_data = std::make_unique<T[]>(num_elements);
@@ -183,11 +203,43 @@ namespace SZ {
             }
             predictor.postdecompress_data(inter_block_range->begin());
             quantizer.postdecompress_data();
+
+            {
+                std::vector<size_t> offsets{1, 4992000, 19500};
+                std::vector<size_t> dims{19500, 256, 256};
+                transpose_inverse(dec_data.get(), dims, offsets);             
+            }
             return dec_data.release();
         }
 
 
     private:
+        template<class T_type>
+        void transpose(T_type * data, const std::vector<size_t>& dims, std::vector<size_t>& offsets) const{
+            // perform transpose
+            std::vector<T_type> tmp(dims[0] * dims[1] * dims[2]);
+            memcpy(tmp.data(), data, dims[0] * dims[1] * dims[2] * sizeof(T_type));
+            for(int i=0; i<dims[0]; i++){
+                for(int j=0; j<dims[1]; j++){
+                    for(int k=0; k<dims[2]; k++){
+                        data[i*offsets[0] + j*offsets[1] + k*offsets[2]] = tmp[i*dims[1]*dims[2] + j*dims[2] + k];
+                    }
+                }
+            }                                
+        }
+        template<class T_type>
+        void transpose_inverse(T_type * data, const std::vector<size_t>& dims, std::vector<size_t>& offsets) const{
+            // perform inverse transpose
+            std::vector<T_type> tmp(dims[0] * dims[1] * dims[2]);
+            memcpy(tmp.data(), data, dims[0] * dims[1] * dims[2] * sizeof(T_type));
+            for(int i=0; i<dims[0]; i++){
+                for(int j=0; j<dims[1]; j++){
+                    for(int k=0; k<dims[2]; k++){
+                        data[i*dims[1]*dims[2] + j*dims[2] + k] = tmp[i*offsets[0] + j*offsets[1] + k*offsets[2]];
+                    }
+                }
+            }                            
+        }
         Predictor predictor;
         LorenzoPredictor<T, N, 1> fallback_predictor;
         Quantizer quantizer;
