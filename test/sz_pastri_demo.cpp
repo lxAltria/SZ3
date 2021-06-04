@@ -49,6 +49,7 @@ float SZ_Pastri_Compress(std::unique_ptr<T[]> const &data,
               << std::endl;
 
     SZ::verify<T>(data_.data(), dec_data.get(), conf.num);
+    SZ::writefile("compressed.dat.out", dec_data.get(), conf.num);
     return ratio;
 }
 

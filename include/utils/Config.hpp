@@ -5,6 +5,8 @@
 #ifndef SZ_CONFIG_HPP
 #define SZ_CONFIG_HPP
 
+#include "def.hpp"
+
 namespace SZ {
     template<class T, uint N>
     class Config {
@@ -38,11 +40,14 @@ namespace SZ {
         bool enable_2ndregression = false;
         bool enable_lossless = true;
         size_t quant_bin = 2;
-        uint block_size, stride, pred_dim = 0;
+        uint block_size, stride;
         T eb;
         // for pastri
         T pattern_eb, scale_eb = 0;
         size_t num_patterns, pattern_repeated_times, pattern_size = 0;
+        // for preprocess
+        uint pred_dim = 0;
+        bool transpose = false;
     };
 }
 

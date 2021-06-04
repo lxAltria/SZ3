@@ -5,8 +5,10 @@
 #ifndef SZ_SZ_HPP
 #define SZ_SZ_HPP
 
+#include "preprocessor/APSPreprocessor.hpp"
 #include "compressor/SZ_General_Compressor.hpp"
 #include "compressor/SZ_Pastri_Compressor.hpp"
+#include "compressor/SZ_APS_Compressor.hpp"
 #include "predictor/Predictor.hpp"
 #include "predictor/LorenzoPredictor.hpp"
 #include "predictor/RegressionPredictor.hpp"

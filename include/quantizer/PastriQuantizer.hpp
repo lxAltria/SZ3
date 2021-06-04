@@ -22,6 +22,12 @@ namespace SZ {
 
         inline int quantize(T data, T pred) {
             T diff = data - pred;
+            // check overflow
+            T quant_index_f = fabs(diff) * this->error_bound_reciprocal + 1;
+            if(quant_index_f > this->radius * 2){
+                this->unpred.push_back(diff);
+                return 0;
+            }            
             if(diff > 0){
                 int quant_index = (int) (diff * this->error_bound_reciprocal) + 1;
                 quant_index >>= 1;
@@ -44,8 +50,10 @@ namespace SZ {
 
         inline int quantize_and_overwrite(T &data, T pred) {
             T diff = data - pred;
-            int quant_index = (int) (fabs(diff) * this->error_bound_reciprocal) + 1;
-            if ((quant_index >= 0) && (quant_index < this->radius * 2)) {
+            // int quant_index = (int) (fabs(diff) * this->error_bound_reciprocal) + 1;
+            T quant_index_f = fabs(diff) * this->error_bound_reciprocal + 1;
+            if (quant_index_f < this->radius * 2) {
+                int quant_index = (int) quant_index_f;
                 quant_index >>= 1;
                 int half_index = quant_index;
                 quant_index <<= 1;

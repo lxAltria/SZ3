@@ -9,3 +9,12 @@ target_link_libraries(sz_test SZ3)
 add_executable(sz_demo sz_demo.cpp)
 target_include_directories(sz_demo PRIVATE ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(sz_demo SZ3)
+
+add_executable(sz_pastri_demo sz_pastri_demo.cpp)
+target_include_directories(sz_pastri_demo PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(sz_pastri_demo SZ3)
+
+add_executable(sz_aps_demo sz_aps_demo.cpp)
+target_include_directories(sz_aps_demo PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(sz_aps_demo SZ3)
+
