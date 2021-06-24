@@ -188,7 +188,6 @@ namespace SZ {
             int const *scale_inds = pattern_inds + num_patterns * pattern_size;
             int const *quant_inds = scale_inds + num_patterns * pattern_repeated_times;
             encoder.postprocess_decode();
-            lossless.postdecompress_data(compressed_data);
             // std::cout << "before lossless size = " << compressed_data_pos - compressed_data << std::endl;
 
             auto dec_data = std::make_unique<T[]>(num_elements);
@@ -216,6 +215,7 @@ namespace SZ {
             }
             // std::cout << pattern_quant_count << " " << scale_quant_count << " " << quant_count << std::endl;
             // quantizer.postdecompress_data();
+            lossless.postdecompress_data(compressed_data);
             return dec_data.release();
         }
 
