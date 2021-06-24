@@ -63,58 +63,20 @@ int main(int argc, char **argv) {
     }
 
     using T = double;
-    switch(n_dims){
-        case 1:{
-            SZ::Config<T, 1> conf(eb, std::array<size_t, 1>{dims[0]});
-            conf.quant_bin = atoi(argv[4 + n_dims]);
-            auto predictor = SZ::LorenzoPredictor<T, 1, 1>(conf.eb);
-            SZ_APS_Compress(data, conf, predictor);
-            break;
-        }
-        case 2:{
-            SZ::Config<T, 2> conf(eb, std::array<size_t, 2>{dims[0], dims[1]});
-            conf.quant_bin = atoi(argv[4 + n_dims]);
-            auto predictor = SZ::LorenzoPredictor<T, 2, 1>(conf.eb);
-            SZ_APS_Compress(data, conf, predictor);
-            break;
-        }
-        case 3:{
-            SZ::Config<T, 3> conf_in(eb, std::array<size_t, 3>{dims[0], dims[1], dims[2]});
-            // SZ::APSPreprocessor<T, 3> preprocessor;
-            // preprocessor.process(data.get(), conf_in);
-            conf_in.pred_dim = 1;
-            switch(conf_in.pred_dim){
-                case 1:{
-                    SZ::Config<T, 1> conf(eb, std::array<size_t, 1>{dims[0] * dims[1] * dims[2]});
-                    conf.quant_bin = atoi(argv[4 + n_dims]);
-                    auto predictor = SZ::LorenzoPredictor<T, 1, 1>(conf.eb);
-                    SZ_APS_Compress(data, conf, predictor);
-                    break;
-                }
-                case 2:{
-                    SZ::Config<T, 2> conf(eb, std::array<size_t, 2>{dims[0] * dims[1], dims[2]});
-                    conf.quant_bin = atoi(argv[4 + n_dims]);
-                    auto predictor = SZ::LorenzoPredictor<T, 2, 1>(conf.eb);
-                    SZ_APS_Compress(data, conf, predictor);
-                    break;                    
-                }
-                case 3:{
-                    SZ::Config<T, 3> conf(eb, std::array<size_t, 3>{dims[0], dims[1], dims[2]});
-                    conf.quant_bin = atoi(argv[4 + n_dims]);
-                    auto predictor = SZ::LorenzoPredictor<T, 3, 1>(conf.eb);
-                    SZ_APS_Compress(data, conf, predictor);
-                    break;                    
-                }
-                default:{
-                    std::cerr << "Only prediction dimensions 1-3 is supported" << std::endl;
-                    exit(0);
-                }
-            }
-            break;
-        }
-        default:
-            std::cerr << "Only dimensions 1-3 is implemented" << std::endl;
-            exit(0);
+    if(eb > 0.5){
+        SZ::Config<T, 3> conf(eb, std::array<size_t, 3>{dims[0], dims[1], dims[2]});
+        conf.quant_bin = atoi(argv[4 + n_dims]);
+        std::vector<std::shared_ptr<SZ::concepts::PredictorInterface<T, 3>>> predictors;
+        predictors.push_back(std::make_shared<SZ::LorenzoPredictor<T, 3, 1>>(conf.eb));
+        predictors.push_back(std::make_shared<SZ::RegressionPredictor<T, 3>>(conf.block_size, conf.eb));
+        SZ_APS_Compress(data, conf, SZ::ComposedPredictor<T, 3>(predictors));
+    }
+    else{
+        SZ::Config<T, 1> conf(eb, std::array<size_t, 1>{dims[0] * dims[1] * dims[2]});
+        conf.quant_bin = 2;
+        conf.transpose = true;
+        auto predictor = SZ::LorenzoPredictor<T, 1, 1>(conf.eb);
+        SZ_APS_Compress(data, conf, predictor);
     }
     return 0;
 }

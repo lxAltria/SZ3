@@ -21,7 +21,7 @@ namespace SZ {
                               Predictor predictor, Quantizer quantizer, Encoder encoder, Lossless lossless) :
                 fallback_predictor(LorenzoPredictor<T, N, 1>(conf.eb)),
                 predictor(predictor), quantizer(quantizer), encoder(encoder), lossless(lossless),
-                block_size(conf.block_size), stride(conf.stride),
+                block_size(conf.block_size), stride(conf.stride), transpose(conf.transpose),
                 global_dimensions(conf.dims), num_elements(conf.num) {
             static_assert(std::is_base_of_v<concepts::PredictorInterface<T, N>, Predictor>,
                           "must implement the predictor interface");
@@ -32,10 +32,12 @@ namespace SZ {
 
         uchar *compress(T *data, size_t &compressed_size) {
 
-            {
-                std::vector<size_t> offsets{1, 4992000, 19500};
-                std::vector<size_t> dims{19500, 256, 256};
-                transpose(data, dims, offsets);
+            if(transpose){
+                // std::vector<size_t> offsets{1, 4992000, 19500};
+                // std::vector<size_t> dims{19500, 256, 256};
+                std::vector<size_t> offsets{1, num_elements / 256, num_elements / 256 / 256};
+                std::vector<size_t> dims{num_elements / 256 / 256, 256, 256};
+                perform_transpose(data, dims, offsets);
             }
 
             auto inter_block_range = std::make_shared<SZ::multi_dimensional_range<T, N>>(data,
@@ -51,10 +53,10 @@ namespace SZ {
             size_t quant_count = 0;
             struct timespec start, end;
             clock_gettime(CLOCK_REALTIME, &start);
-            double pred_err = 0;
-            double est_pred_err = 0;
-            std::vector<double> pred_err_vec(num_elements);
-            double quant_ind_err = 0;
+            // double pred_err = 0;
+            // double est_pred_err = 0;
+            // std::vector<double> pred_err_vec(num_elements);
+            // double quant_ind_err = 0;
             {
                 auto inter_begin = inter_block_range->begin();
                 auto inter_end = inter_block_range->end();
@@ -80,18 +82,18 @@ namespace SZ {
                     auto intra_begin = intra_block_range->begin();
                     auto intra_end = intra_block_range->end();
                     for (auto element = intra_begin; element != intra_end; ++element) {
-                        est_pred_err += predictor_withfallback->estimate_error(element);
-                        pred_err += fabs(*element - predictor_withfallback->predict(element));
-                        pred_err_vec[quant_count] = fabs(*element - predictor_withfallback->predict(element));
+                        // est_pred_err += predictor_withfallback->estimate_error(element);
+                        // pred_err += fabs(*element - predictor_withfallback->predict(element));
+                        // pred_err_vec[quant_count] = fabs(*element - predictor_withfallback->predict(element));
                         quant_inds[quant_count++] = quantizer.quantize_and_overwrite(
                                 *element, predictor_withfallback->predict(element));
-                        quant_ind_err += fabs(quant_inds[quant_count - 1] - quantizer.get_radius());
+                        // quant_ind_err += fabs(quant_inds[quant_count - 1] - quantizer.get_radius());
                     }
                 }
             }
-            std::cout << "pred_err = " << pred_err << std::endl;
-            std::cout << "est_pred_err = " << est_pred_err << std::endl;
-            std::cout << "quant_ind_err = " << quant_ind_err << std::endl;
+            // std::cout << "pred_err = " << pred_err << std::endl;
+            // std::cout << "est_pred_err = " << est_pred_err << std::endl;
+            // std::cout << "quant_ind_err = " << quant_ind_err << std::endl;
 
             // transpose quantization index
             // {
@@ -116,6 +118,7 @@ namespace SZ {
 
             write(global_dimensions.data(), N, compressed_data_pos);
             write(block_size, compressed_data_pos);
+            write((uchar)transpose, compressed_data_pos);
             predictor.save(compressed_data_pos);
             quantizer.save(compressed_data_pos);
 
@@ -144,6 +147,9 @@ namespace SZ {
             }
             std::cout << std::endl;
             read(block_size, compressed_data_pos, remaining_length);
+            uchar transpose_tmp = 0;
+            read(transpose_tmp, compressed_data_pos, remaining_length);
+            transpose = transpose_tmp;
             stride = block_size;
             predictor.load(compressed_data_pos, remaining_length);
             quantizer.load(compressed_data_pos, remaining_length);
@@ -204,10 +210,12 @@ namespace SZ {
             predictor.postdecompress_data(inter_block_range->begin());
             quantizer.postdecompress_data();
 
-            {
-                std::vector<size_t> offsets{1, 4992000, 19500};
-                std::vector<size_t> dims{19500, 256, 256};
-                transpose_inverse(dec_data.get(), dims, offsets);             
+            if(transpose){
+                // std::vector<size_t> offsets{1, 4992000, 19500};
+                // std::vector<size_t> dims{19500, 256, 256};
+                std::vector<size_t> offsets{1, num_elements / 256, num_elements / 256 / 256};
+                std::vector<size_t> dims{num_elements / 256 / 256, 256, 256};
+                perform_inverse_transpose(dec_data.get(), dims, offsets);             
             }
             return dec_data.release();
         }
@@ -215,7 +223,7 @@ namespace SZ {
 
     private:
         template<class T_type>
-        void transpose(T_type * data, const std::vector<size_t>& dims, std::vector<size_t>& offsets) const{
+        void perform_transpose(T_type * data, const std::vector<size_t>& dims, std::vector<size_t>& offsets) const{
             // perform transpose
             std::vector<T_type> tmp(dims[0] * dims[1] * dims[2]);
             memcpy(tmp.data(), data, dims[0] * dims[1] * dims[2] * sizeof(T_type));
@@ -228,7 +236,7 @@ namespace SZ {
             }                                
         }
         template<class T_type>
-        void transpose_inverse(T_type * data, const std::vector<size_t>& dims, std::vector<size_t>& offsets) const{
+        void perform_inverse_transpose(T_type * data, const std::vector<size_t>& dims, std::vector<size_t>& offsets) const{
             // perform inverse transpose
             std::vector<T_type> tmp(dims[0] * dims[1] * dims[2]);
             memcpy(tmp.data(), data, dims[0] * dims[1] * dims[2] * sizeof(T_type));
@@ -249,6 +257,7 @@ namespace SZ {
         uint stride;
         size_t num_elements;
         std::array<size_t, N> global_dimensions;
+        bool transpose = false;
     };
 
     template<class T, uint N, class Predictor, class Quantizer, class Encoder, class Lossless>

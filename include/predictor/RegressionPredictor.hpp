@@ -20,11 +20,15 @@ namespace SZ {
 
         RegressionPredictor() : quantizer_independent(0), quantizer_liner(0), prev_coeffs{0}, current_coeffs{0} {}
 
-        RegressionPredictor(uint block_size, T eb) : quantizer_independent(eb / (N + 1)),
-                                                     quantizer_liner(eb / (N + 1) / block_size),
+        // RegressionPredictor(uint block_size, T eb) : quantizer_independent(eb / (N + 1)),
+        //                                              quantizer_liner(eb / (N + 1) / block_size),
+        //                                              prev_coeffs{0}, current_coeffs{0} {
+        // }
+        RegressionPredictor(uint block_size, T eb) : quantizer_independent(eb * 0.025),
+                                                     quantizer_liner(eb * 0.025 / block_size),
                                                      prev_coeffs{0}, current_coeffs{0} {
         }
-
+        
         RegressionPredictor(uint block_size, T eb1, T eb2) : quantizer_independent(eb1),
                                                              quantizer_liner(eb2),
                                                              prev_coeffs{0}, current_coeffs{0} {

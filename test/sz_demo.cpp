@@ -5,8 +5,8 @@
 #include <memory>
 
 template<class T, uint N>
-float SZ_Compress_by_config(int argc, char **argv, int argp, std::unique_ptr<T[]> &data, float eb, std::array<size_t, N> dims) {
-    SZ::Config<float, N> conf(eb, dims);
+double SZ_Compress_by_config(int argc, char **argv, int argp, std::unique_ptr<T[]> &data, double eb, std::array<size_t, N> dims) {
+    SZ::Config<double, N> conf(eb, dims);
     if (argp < argc) {
         int block_size = atoi(argv[argp++]);
         conf.block_size = block_size;
@@ -31,24 +31,26 @@ float SZ_Compress_by_config(int argc, char **argv, int argp, std::unique_ptr<T[]
 
 int main(int argc, char **argv) {
     size_t num = 0;
-    auto data = SZ::readfile<float>(argv[1], num);
+    auto data = SZ::readfile<double>(argv[1], num);
+    std::cout << argv[1] << " " << argv[2] << std::endl;
     std::cout << "Read " << num << " elements\n";
 
-    int dim = atoi(argv[2] + 1);
+    int dim = atoi(argv[2]);
+    std::cout << dim << std::endl;
     assert(1 <= dim && dim <= 4);
     int argp = 3;
     std::vector<size_t> dims(dim);
     for (int i = 0; i < dim; i++) {
         dims[i] = atoi(argv[argp++]);
     }
-    float reb = atof(argv[argp++]);
-    float max = data[0];
-    float min = data[0];
+    double reb = atof(argv[argp++]);
+    double max = data[0];
+    double min = data[0];
     for (int i = 1; i < num; i++) {
         if (max < data[i]) max = data[i];
         if (min > data[i]) min = data[i];
     }
-    float eb = reb * (max - min);
+    double eb = reb * (max - min);
     if (argp == argc) {
         if (dim == 1) {
             SZ::SZ_Compress(data, eb, dims[0]);
@@ -63,13 +65,13 @@ int main(int argc, char **argv) {
     }
 
     if (dim == 1) {
-        SZ_Compress_by_config<float, 1>(argc, argv, argp, data, eb, std::array<size_t, 1>{dims[0]});
+        SZ_Compress_by_config<double, 1>(argc, argv, argp, data, eb, std::array<size_t, 1>{dims[0]});
     } else if (dim == 2) {
-        SZ_Compress_by_config<float, 2>(argc, argv, argp, data, eb, std::array<size_t, 2>{dims[0], dims[1]});
+        SZ_Compress_by_config<double, 2>(argc, argv, argp, data, eb, std::array<size_t, 2>{dims[0], dims[1]});
     } else if (dim == 3) {
-        SZ_Compress_by_config<float, 3>(argc, argv, argp, data, eb, std::array<size_t, 3>{dims[0], dims[1], dims[2]});
+        SZ_Compress_by_config<double, 3>(argc, argv, argp, data, eb, std::array<size_t, 3>{dims[0], dims[1], dims[2]});
     } else if (dim == 4) {
-        SZ_Compress_by_config<float, 4>(argc, argv, argp, data, eb, std::array<size_t, 4>{dims[0], dims[1], dims[2], dims[3]});
+        SZ_Compress_by_config<double, 4>(argc, argv, argp, data, eb, std::array<size_t, 4>{dims[0], dims[1], dims[2], dims[3]});
     }
 
     return 0;

@@ -77,6 +77,7 @@ namespace SZ {
                     }
                 }
             }
+            predictor.print();
 
             clock_gettime(CLOCK_REALTIME, &end);
             std::cout << "Predition & Quantization time = "
