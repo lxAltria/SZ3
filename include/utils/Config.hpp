@@ -6,6 +6,7 @@
 #define SZ_CONFIG_HPP
 
 #include "def.hpp"
+#include <array>
 
 namespace SZ {
     template<class T, uint N>
@@ -39,7 +40,7 @@ namespace SZ {
         bool enable_regression = true;
         bool enable_2ndregression = false;
         bool enable_lossless = true;
-        size_t quant_bin = 32768;
+        size_t quant_bin = 2;
         uint block_size, stride;
         T eb;
         // for pastri
