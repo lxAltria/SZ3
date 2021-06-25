@@ -34,9 +34,9 @@ namespace SZ {
         }
 
         uchar *compress(T *data, size_t &compressed_size) {
-            struct timespec start, end;
+            // struct timespec start, end;
 
-            clock_gettime(CLOCK_REALTIME, &start);
+            // clock_gettime(CLOCK_REALTIME, &start);
             PatternPredictor<T> predictor = PatternPredictor<T>(pattern_repeated_times, pattern_size);
             Quantizer quantizer(eb, quant_bin);
             // quantizer.precompress_data();
@@ -61,21 +61,21 @@ namespace SZ {
             size_t scale_quant_count = 0;
             size_t quant_count = 0;
             // leave space for recording compressed predictor size
-            std::cout << "radius = " << quantizer.get_radius() << " " << pattern_quantizer.get_radius() << " " << scale_quantizer.get_radius() << std::endl;
+            // std::cout << "radius = " << quantizer.get_radius() << " " << pattern_quantizer.get_radius() << " " << scale_quantizer.get_radius() << std::endl;
             uchar * compressed_predictor_pos = compressed_data_pos;
             compressed_data_pos += sizeof(size_t);
-            clock_gettime(CLOCK_REALTIME, &end);
-            std::cout << "Preprocessing/initialization time = "
-                      << (double) (end.tv_sec - start.tv_sec) + (double) (end.tv_nsec - start.tv_nsec) / (double) 1000000000
-                      << "s" << std::endl;
-            clock_gettime(CLOCK_REALTIME, &start);
+            // clock_gettime(CLOCK_REALTIME, &end);
+            // std::cout << "Preprocessing/initialization time = "
+            //           << (double) (end.tv_sec - start.tv_sec) + (double) (end.tv_nsec - start.tv_nsec) / (double) 1000000000
+            //           << "s" << std::endl;
+            // clock_gettime(CLOCK_REALTIME, &start);
             const T * data_pos = data;
             // deal it in 1D
             int eb_exp = 0;
             frexp(eb, &eb_exp);
             std::vector<T> pattern(pattern_size);
-            struct timespec start_unpred, end_unpred;
-            double unpred_encode_time = 0;
+            // struct timespec start_unpred, end_unpred;
+            // double unpred_encode_time = 0;
             for(int i=0; i<num_patterns; i++){
                 // extract pattern
                 predictor.extract_pattern(data_pos, pattern.data());
@@ -95,18 +95,18 @@ namespace SZ {
                     }
                 }
                 // std::cout << i << " " << compressed_data_pos - compressed_data << std::endl;
-                clock_gettime(CLOCK_REALTIME, &start_unpred);
+                // clock_gettime(CLOCK_REALTIME, &start_unpred);
                 quantizer.save(compressed_data_pos);
-                clock_gettime(CLOCK_REALTIME, &end_unpred);
-                unpred_encode_time += (double) (end_unpred.tv_sec - start_unpred.tv_sec) + (double) (end_unpred.tv_nsec - start_unpred.tv_nsec) / (double) 1000000000;
+                // clock_gettime(CLOCK_REALTIME, &end_unpred);
+                // unpred_encode_time += (double) (end_unpred.tv_sec - start_unpred.tv_sec) + (double) (end_unpred.tv_nsec - start_unpred.tv_nsec) / (double) 1000000000;
                 // std::cout << "block encoding size = " << compressed_data_pos - prev_size << std::endl;
             }
-            clock_gettime(CLOCK_REALTIME, &end);
-            std::cout << "Prediction & Quantization time = "
-                      << (double) (end.tv_sec - start.tv_sec) + (double) (end.tv_nsec - start.tv_nsec) / (double) 1000000000
-                      << "s, unpred_encode_time = " << unpred_encode_time << std::endl;
+            // clock_gettime(CLOCK_REALTIME, &end);
+            // std::cout << "Prediction & Quantization time = "
+            //           << (double) (end.tv_sec - start.tv_sec) + (double) (end.tv_nsec - start.tv_nsec) / (double) 1000000000
+            //           << "s, unpred_encode_time = " << unpred_encode_time << std::endl;
 
-            clock_gettime(CLOCK_REALTIME, &start);
+            // clock_gettime(CLOCK_REALTIME, &start);
             size_t compressed_predictor_size = compressed_data_pos - compressed_predictor_pos - sizeof(size_t);
             write(compressed_predictor_size, compressed_predictor_pos);
 
@@ -114,9 +114,9 @@ namespace SZ {
             // std::cout << "quantizer pos = " << compressed_data_pos - compressed_data << std::endl;
             pattern_quantizer.save(compressed_data_pos);
             scale_quantizer.save(compressed_data_pos);
-            clock_gettime(CLOCK_REALTIME, &end);
-            std::cout << "write predictor & quantizer time = " << (double) (end.tv_sec - start.tv_sec) + (double) (end.tv_nsec - start.tv_nsec) / (double) 1000000000
-                      << "s" << std::endl;
+            // clock_gettime(CLOCK_REALTIME, &end);
+            // std::cout << "write predictor & quantizer time = " << (double) (end.tv_sec - start.tv_sec) + (double) (end.tv_nsec - start.tv_nsec) / (double) 1000000000
+            //           << "s" << std::endl;
 
             for(int i=0; i<all_inds.size(); i++){
                 if(all_inds[i] > 3){
@@ -125,25 +125,25 @@ namespace SZ {
                 }
             }
             // std::cout << "encoder pos = " << compressed_data_pos - compressed_data << std::endl;
-            clock_gettime(CLOCK_REALTIME, &start);
+            // clock_gettime(CLOCK_REALTIME, &start);
             auto encode_pos = compressed_data_pos;
             encoder.preprocess_encode(all_inds, 4 * quantizer.get_radius());
             encoder.save(compressed_data_pos);
             encoder.encode(all_inds, compressed_data_pos);
             encoder.postprocess_encode();
-            clock_gettime(CLOCK_REALTIME, &end);
-            std::cout << "Encoding time = " << (double) (end.tv_sec - start.tv_sec) + (double) (end.tv_nsec - start.tv_nsec) / (double) 1000000000
-                      << "s" << std::endl;
+            // clock_gettime(CLOCK_REALTIME, &end);
+            // std::cout << "Encoding time = " << (double) (end.tv_sec - start.tv_sec) + (double) (end.tv_nsec - start.tv_nsec) / (double) 1000000000
+            //           << "s" << std::endl;
 
-            clock_gettime(CLOCK_REALTIME, &start);
+            // clock_gettime(CLOCK_REALTIME, &start);
             // std::cout << "before lossless size = " << compressed_data_pos - compressed_data << std::endl;
             uchar *lossless_data = lossless.compress(compressed_data,
                                                      compressed_data_pos - compressed_data,
                                                      compressed_size);
             lossless.postcompress_data(compressed_data);
-            clock_gettime(CLOCK_REALTIME, &end);
-            std::cout << "Lossless time = " << (double) (end.tv_sec - start.tv_sec) + (double) (end.tv_nsec - start.tv_nsec) / (double) 1000000000
-                      << "s" << std::endl;
+            // clock_gettime(CLOCK_REALTIME, &end);
+            // std::cout << "Lossless time = " << (double) (end.tv_sec - start.tv_sec) + (double) (end.tv_nsec - start.tv_nsec) / (double) 1000000000
+            //           << "s" << std::endl;
             // std::cout << "lossless size = " << compressed_size << std::endl;
             return lossless_data;
         }
