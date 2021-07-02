@@ -118,12 +118,6 @@ namespace SZ {
             // std::cout << "write predictor & quantizer time = " << (double) (end.tv_sec - start.tv_sec) + (double) (end.tv_nsec - start.tv_nsec) / (double) 1000000000
             //           << "s" << std::endl;
 
-            for(int i=0; i<all_inds.size(); i++){
-                if(all_inds[i] > 3){
-                    std::cout << i << " " << all_inds[i] << std::endl;
-                    exit(0);
-                }
-            }
             // std::cout << "encoder pos = " << compressed_data_pos - compressed_data << std::endl;
             // clock_gettime(CLOCK_REALTIME, &start);
             auto encode_pos = compressed_data_pos;
