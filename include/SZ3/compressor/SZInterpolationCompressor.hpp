@@ -49,11 +49,19 @@ namespace SZ {
             read(interpolator_id, buffer_pos, remaining_length);
             read(direction_sequence_id, buffer_pos, remaining_length);
 
+            // read auxilliary data
+            read(detection_block_size, buffer_pos);
+            size_t num_detection_block = 0;
+            read(num_detection_block, buffer_pos);
+            flushed_block_id = std::vector<uchar>(num_detection_block);
+            convertByteArray2IntArray_fast_1b_sz(num_detection_block, buffer_pos, (num_detection_block - 1)/8 + 1, flushed_block_id.data());
+
             init();
+            auto num_flushed_elements = compute_auxilliary_data_decompress(decData); 
 
             quantizer.load(buffer_pos, remaining_length);
             encoder.load(buffer_pos, remaining_length);
-            quant_inds = encoder.decode(buffer_pos, num_elements);
+            quant_inds = encoder.decode(buffer_pos, num_elements - num_flushed_elements);
 
             encoder.postprocess_decode();
 
@@ -61,7 +69,8 @@ namespace SZ {
             double eb = quantizer.get_eb();
             double eb_final = eb / pow(c, interpolation_level - 1);
 
-            *decData = quantizer.recover(0, quant_inds[quant_index++]);
+            // *decData = quantizer.recover(0, quant_inds[quant_index++]);
+            recover(0, *decData, 0);
 
             for (uint level = interpolation_level; level > 0 && level <= interpolation_level; level--) {
                 // if (level >= 3) {
@@ -107,6 +116,7 @@ namespace SZ {
             direction_sequence_id = conf.interpDirection;
 
             init();
+            compute_auxilliary_data(conf, data);
 
             quant_inds.reserve(num_elements);
             size_t interp_compressed_size = 0;
@@ -114,7 +124,8 @@ namespace SZ {
             double eb = quantizer.get_eb();
             double eb_final = eb / pow(c, interpolation_level - 1);
 
-            quant_inds.push_back(quantizer.quantize_and_overwrite(*data, 0));
+            // quant_inds.push_back(quantizer.quantize_and_overwrite(*data, 0));
+            quantize(0, *data, 0);
 
             Timer timer;
             timer.start();
@@ -167,6 +178,12 @@ namespace SZ {
             write(blocksize, buffer_pos);
             write(interpolator_id, buffer_pos);
             write(direction_sequence_id, buffer_pos);
+
+            // add auxilliary array
+            write(detection_block_size, buffer_pos);
+            size_t num_detection_block = flushed_block_id.size();
+            write(num_detection_block, buffer_pos);
+            convertIntArray2ByteArray_fast_1b_to_result_sz(flushed_block_id.data(), flushed_block_id.size(), buffer_pos);
 
             quantizer.save(buffer_pos);
             quantizer.postcompress_data();
@@ -223,11 +240,22 @@ namespace SZ {
         }
 
         inline void quantize(size_t idx, T &d, T pred) {
-            quant_inds.push_back(quantizer.quantize_and_overwrite(d, pred));
+            if(flushed_block[idx]) {
+                d = 0;
+            }
+            else{
+                quant_inds.push_back(quantizer.quantize_and_overwrite(d, pred));                
+            }
+
         }
 
         inline void recover(size_t idx, T &d, T pred) {
-            d = quantizer.recover(pred, quant_inds[quant_index++]);
+            if(flushed_block[idx]){
+                d = 0;
+            }
+            else{
+                d = quantizer.recover(pred, quant_inds[quant_index++]);
+            }
         };
 
 
@@ -481,6 +509,209 @@ namespace SZ {
             return predict_error;
         }
 
+        void compute_auxilliary_data(const Config &conf, T *data){
+            // TODO: add corner case when dimensions are not divisible by block size
+            int block_size = detection_block_size;
+            const auto& dims = conf.dims;
+            int nx = dims[0] / block_size;
+            int ny = dims[1] / block_size;
+            int nz = dims[2] / block_size;
+            flushed_block = std::vector<uchar>(num_elements, 0);
+            flushed_block_id = std::vector<uchar>(nx * ny * nz, 0);
+            Timer timer;
+            timer.start();
+            // compute statistics
+            int block_id = 0;
+            int flushed_count = 0;
+            // std::vector<double> var;
+            T * x_data_pos = data;
+            for(int i=0; i<nx; i++){
+                T * y_data_pos = x_data_pos;
+                for(int j=0; j<ny; j++){
+                    T * z_data_pos = y_data_pos;
+                    for(int k=0; k<nz; k++){
+                        T max_abs_val = 0;
+                        // compute average
+                        double sum = 0;
+                        T * xx_data_pos = z_data_pos;
+                        for(int ii=0; ii<block_size; ii++){
+                            T * yy_data_pos = xx_data_pos;
+                            for(int jj=0; jj<block_size; jj++){
+                                T * zz_data_pos = yy_data_pos;
+                                for(int kk=0; kk<block_size; kk++){
+                                    // int index = (i*block_size + ii) * dims[1] * dims[2] + (j*block_size + jj) * dims[2] + k*block_size +kk;
+                                    // // sum += data[index];
+                                    // if(fabs(data[index]) > max_abs_val) max_abs_val = fabs(data[index]);
+                                    if(fabs(*zz_data_pos) > max_abs_val) max_abs_val = fabs(*zz_data_pos);
+                                    zz_data_pos ++;
+                                }
+                                yy_data_pos += dims[2];
+                            }
+                            xx_data_pos += dims[1] * dims[2];
+                        }
+                        if(max_abs_val < quantizer.get_eb()*0.1){
+                            T * xx_data_pos = z_data_pos;
+                            for(int ii=0; ii<block_size; ii++){
+                                T * yy_data_pos = xx_data_pos;
+                                for(int jj=0; jj<block_size; jj++){
+                                    T * zz_data_pos = yy_data_pos;
+                                    for(int kk=0; kk<block_size; kk++){
+                                        *zz_data_pos = 0;
+                                        flushed_block[zz_data_pos - data] = 1;
+                                        zz_data_pos ++;
+                                    }
+                                    yy_data_pos += dims[2];
+                                }
+                                xx_data_pos += dims[1] * dims[2];
+                            }
+                            flushed_block_id[block_id] = 1;
+                            flushed_count ++;
+                            // sum = 0;
+                        }
+                        // double average = sum / (block_size*block_size*block_size);
+                        // double variance = 0;
+                        // for(int ii=0; ii<block_size; ii++){
+                        //     for(int jj=0; jj<block_size; jj++){
+                        //         for(int kk=0; kk<block_size; kk++){
+                        //             int index = (i*block_size + ii) * dims[1] * dims[2] + (j*block_size + jj) * dims[2] + k*block_size +kk;
+                        //             variance += (data[index] - average) * (data[index] - average);
+                        //         }
+                        //     }
+                        // }
+                        // variance /= (block_size*block_size*block_size);
+                        // var.push_back(variance);
+                        block_id ++;
+                        z_data_pos += block_size;
+                    }
+                    y_data_pos += block_size * dims[2];
+                }
+                x_data_pos += block_size * dims[1] * dims[2];
+            }
+            std::cout << "flushed_count = " << flushed_count << ", percent = " << flushed_count * 1.0 / (nx * ny * nz) << std::endl;
+            // auto var_tmp(var);
+            // std::sort(var_tmp.begin(), var_tmp.end());
+            // double percent = 0.8;
+            // double threshold = var_tmp[(int)(percent*var.size())];
+            // std::cout << percent * 100 << "% threshold = " << threshold << std::endl;
+            // std::vector<int> significant_block_id;
+            // int var_id = 0;
+            // for(int i=0; i<nx; i++){
+            //     for(int j=0; j<ny; j++){
+            //         for(int k=0; k<nz; k++){
+            //             // compute average
+            //             significant_block_id.push_back(0);
+            //             if(var[var_id] > threshold){
+            //                 for(int ii=0; ii<block_size; ii++){
+            //                     for(int jj=0; jj<block_size; jj++){
+            //                         for(int kk=0; kk<block_size; kk++){
+            //                             int index = (i*block_size + ii) * dims[1] * dims[2] + (j*block_size + jj) * dims[2] + k*block_size +kk;
+            //                             significant_block[index] = 1;
+            //                         }
+            //                     }
+            //                 }
+            //                 significant_block_id[significant_block_id.size() - 1] = 1;
+            //             }
+            //             var_id ++;
+            //         }
+            //     }
+            // }
+            timer.stop("detect");
+            // writefile("significant_block_id.dat", significant_block_id.data(), significant_block_id.size());
+            // writefile("significant_block.dat", significant_block.data(), significant_block.size());
+            // writefile("flushed_block.dat", flushed_block.data(), flushed_block.size());
+        }
+
+        size_t compute_auxilliary_data_decompress(const T *data){
+            // TODO: add corner case when dimensions are not divisible by block size
+            int block_size = detection_block_size;
+            const auto& dims = global_dimensions;
+            int nx = dims[0] / block_size;
+            int ny = dims[1] / block_size;
+            int nz = dims[2] / block_size;
+            flushed_block = std::vector<uchar>(num_elements, 0);
+            int block_id = 0;
+            size_t num_flushed_elements = 0;
+            const T * x_data_pos = data;
+            for(int i=0; i<nx; i++){
+                const T * y_data_pos = x_data_pos;
+                for(int j=0; j<ny; j++){
+                    const T * z_data_pos = y_data_pos;
+                    for(int k=0; k<nz; k++){
+                        if(flushed_block_id[block_id]){
+                            num_flushed_elements += block_size * block_size * block_size;
+                            const T * xx_data_pos = z_data_pos;
+                            for(int ii=0; ii<block_size; ii++){
+                                const T * yy_data_pos = xx_data_pos;
+                                for(int jj=0; jj<block_size; jj++){
+                                    const T * zz_data_pos = yy_data_pos;
+                                    for(int kk=0; kk<block_size; kk++){
+                                        flushed_block[zz_data_pos - data] = 1;
+                                        zz_data_pos ++;
+                                    }
+                                    yy_data_pos += dims[2];
+                                }
+                                xx_data_pos += dims[1] * dims[2];
+                            }                        
+                        }
+                        block_id ++;
+                        z_data_pos += block_size;
+                    }
+                    y_data_pos += block_size * dims[2];
+                }
+                x_data_pos += block_size * dims[1] * dims[2];
+            }
+            return num_flushed_elements;
+        }
+
+        // *** modified from Sheng's code start ***
+        void convertIntArray2ByteArray_fast_1b_to_result_sz(const uchar* intArray, size_t intArrayLength, uchar *& compressed_pos){
+            size_t byteLength = 0;
+            size_t i, j; 
+            if(intArrayLength%8==0)
+                byteLength = intArrayLength/8;
+            else
+                byteLength = intArrayLength/8+1;
+                
+            size_t n = 0;
+            int tmp, type;
+            for(i = 0;i<byteLength;i++){
+                tmp = 0;
+                for(j = 0;j<8&&n<intArrayLength;j++){
+                    type = intArray[n];
+                    if(type == 1)
+                        tmp = (tmp | (1 << (7-j)));
+                    n++;
+                }
+                *(compressed_pos++) = (uchar)tmp;
+            }
+        }
+
+        void convertByteArray2IntArray_fast_1b_sz(size_t intArrayLength, const uchar*& compressed_pos, size_t byteArrayLength, uchar * intArray){
+            if(intArrayLength > byteArrayLength*8){
+                printf("Error: intArrayLength > byteArrayLength*8\n");
+                printf("intArrayLength=%zu, byteArrayLength = %zu", intArrayLength, byteArrayLength);
+                exit(0);
+            }
+            size_t n = 0, i;
+            int tmp;
+            for (i = 0; i < byteArrayLength-1; i++) {
+                tmp = *(compressed_pos++);
+                intArray[n++] = (tmp & 0x80) >> 7;
+                intArray[n++] = (tmp & 0x40) >> 6;
+                intArray[n++] = (tmp & 0x20) >> 5;
+                intArray[n++] = (tmp & 0x10) >> 4;
+                intArray[n++] = (tmp & 0x08) >> 3;
+                intArray[n++] = (tmp & 0x04) >> 2;
+                intArray[n++] = (tmp & 0x02) >> 1;
+                intArray[n++] = (tmp & 0x01) >> 0;      
+            }
+            tmp = *(compressed_pos++);  
+            for(int i=0; n < intArrayLength; n++, i++){
+                intArray[n] = (tmp & (1 << (7 - i))) >> (7 - i);
+            }       
+        }
+        // *** modified from Sheng's code end ***
+
         int interpolation_level = -1;
         uint blocksize;
         int interpolator_id;
@@ -503,6 +734,9 @@ namespace SZ {
         double c1 = 1.0 / sqrt(1.640625);
         double c2 = 1.0 / 1.640625;
         double c3 = 1.0 / sqrt(4.4159889);
+        int detection_block_size = 16;
+        std::vector<uchar> flushed_block;
+        std::vector<uchar> flushed_block_id;
     };
 
 
