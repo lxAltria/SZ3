@@ -59,15 +59,20 @@ namespace SZ {
 
             lossless.postdecompress_data(buffer);
             double eb = quantizer.get_eb();
+            double eb_final = eb / pow(c, interpolation_level - 1);
 
             *decData = quantizer.recover(0, quant_inds[quant_index++]);
 
             for (uint level = interpolation_level; level > 0 && level <= interpolation_level; level--) {
-                if (level >= 3) {
-                    quantizer.set_eb(eb * eb_ratio);
-                } else {
-                    quantizer.set_eb(eb);
-                }
+                // if (level >= 3) {
+                //     quantizer.set_eb(eb * eb_ratio);
+                // } else {
+                //     quantizer.set_eb(eb);
+                // }
+                current_level = level;
+                quantizer.set_eb(eb_final);
+                eb_final *= c;
+
                 size_t stride = 1U << (level - 1);
                 auto inter_block_range = std::make_shared<
                         SZ::multi_dimensional_range<T, N>>(decData,
@@ -107,6 +112,7 @@ namespace SZ {
             size_t interp_compressed_size = 0;
 
             double eb = quantizer.get_eb();
+            double eb_final = eb / pow(c, interpolation_level - 1);
 
             quant_inds.push_back(quantizer.quantize_and_overwrite(*data, 0));
 
@@ -114,11 +120,15 @@ namespace SZ {
             timer.start();
 
             for (uint level = interpolation_level; level > 0 && level <= interpolation_level; level--) {
-                if (level >= 3) {
-                    quantizer.set_eb(eb * eb_ratio);
-                } else {
-                    quantizer.set_eb(eb);
-                }
+                // if (level >= 3) {
+                //     quantizer.set_eb(eb * eb_ratio);
+                // } else {
+                //     quantizer.set_eb(eb);
+                // }
+                current_level = level;
+                quantizer.set_eb(eb_final);
+                eb_final *= c;
+
                 size_t stride = 1U << (level - 1);
 
                 auto inter_block_range = std::make_shared<
@@ -346,6 +356,10 @@ namespace SZ {
                             const std::string &interp_func, const int direction, size_t stride = 1) {
             double predict_error = 0;
             size_t stride2x = stride * 2;
+
+            auto default_eb = quantizer.get_eb();
+            quantizer.set_eb(default_eb * c2);
+
             const std::array<int, N> dims = dimension_sequences[direction];
             for (size_t j = (begin[dims[1]] ? begin[dims[1]] + stride2x : 0); j <= end[dims[1]]; j += stride2x) {
                 for (size_t k = (begin[dims[2]] ? begin[dims[2]] + stride2x : 0); k <= end[dims[2]]; k += stride2x) {
@@ -358,6 +372,9 @@ namespace SZ {
                                                             stride * dimension_offsets[dims[0]], interp_func, pb);
                 }
             }
+
+            quantizer.set_eb(default_eb * c1);
+
             for (size_t i = (begin[dims[0]] ? begin[dims[0]] + stride : 0); i <= end[dims[0]]; i += stride) {
                 for (size_t k = (begin[dims[2]] ? begin[dims[2]] + stride2x : 0); k <= end[dims[2]]; k += stride2x) {
                     size_t begin_offset = i * dimension_offsets[dims[0]] + begin[dims[1]] * dimension_offsets[dims[1]] +
@@ -369,6 +386,9 @@ namespace SZ {
                                                             stride * dimension_offsets[dims[1]], interp_func, pb);
                 }
             }
+
+            quantizer.set_eb(default_eb );
+
             for (size_t i = (begin[dims[0]] ? begin[dims[0]] + stride : 0); i <= end[dims[0]]; i += stride) {
                 for (size_t j = (begin[dims[1]] ? begin[dims[1]] + stride : 0); j <= end[dims[1]]; j += stride) {
                     size_t begin_offset = i * dimension_offsets[dims[0]] + j * dimension_offsets[dims[1]] +
@@ -477,6 +497,12 @@ namespace SZ {
         std::array<size_t, N> dimension_offsets;
         std::vector<std::array<int, N>> dimension_sequences;
         int direction_sequence_id;
+        // added for artifact mitigation
+        int current_level = 0;
+        double c = sqrt(4.4159889);
+        double c1 = 1.0 / sqrt(1.640625);
+        double c2 = 1.0 / 1.640625;
+        double c3 = 1.0 / sqrt(4.4159889);
     };
 
 
