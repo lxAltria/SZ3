@@ -240,11 +240,12 @@ namespace SZ {
                     }
                     if (n % 2 == 0) {
                         T *d = data + begin + (n - 1) * stride;
-                        if (n < 4) {
-                            quantize(d - data, *d, *(d - stride));
-                        } else {
-                            quantize(d - data, *d, interp_linear1(*(d - stride3x), *(d - stride)));
-                        }
+                        quantize(d - data, *d, *(d - stride));
+                        // if (n < 4) {
+                        //     quantize(d - data, *d, *(d - stride));
+                        // } else {
+                        //     quantize(d - data, *d, interp_linear1(*(d - stride3x), *(d - stride)));
+                        // }
                     }
                 } else {
                     for (size_t i = 1; i + 1 < n; i += 2) {
@@ -253,11 +254,12 @@ namespace SZ {
                     }
                     if (n % 2 == 0) {
                         T *d = data + begin + (n - 1) * stride;
-                        if (n < 4) {
-                            recover(d - data, *d, *(d - stride));
-                        } else {
-                            recover(d - data, *d, interp_linear1(*(d - stride3x), *(d - stride)));
-                        }
+                        recover(d - data, *d, *(d - stride));
+                        // if (n < 4) {
+                        //     recover(d - data, *d, *(d - stride));
+                        // } else {
+                        //     recover(d - data, *d, interp_linear1(*(d - stride3x), *(d - stride)));
+                        // }
                     }
                 }
             } else {
@@ -277,7 +279,8 @@ namespace SZ {
                     quantize(d - data, *d, interp_quad_2(*(d - stride3x), *(d - stride), *(d + stride)));
                     if (n % 2 == 0) {
                         d = data + begin + (n - 1) * stride;
-                        quantize(d - data, *d, interp_quad_3(*(d - stride5x), *(d - stride3x), *(d - stride)));
+                        quantize(d - data, *d, *(d - stride));
+                        // quantize(d - data, *d, interp_quad_3(*(d - stride5x), *(d - stride3x), *(d - stride)));
                     }
 
                 } else {
@@ -297,7 +300,8 @@ namespace SZ {
 
                     if (n % 2 == 0) {
                         d = data + begin + (n - 1) * stride;
-                        recover(d - data, *d, interp_quad_3(*(d - stride5x), *(d - stride3x), *(d - stride)));
+                        recover(d - data, *d, *(d - stride));
+                        // recover(d - data, *d, interp_quad_3(*(d - stride5x), *(d - stride3x), *(d - stride)));
                     }
                 }
             }
