@@ -58,6 +58,7 @@ namespace SZ {
             significant_block_id = std::vector<uchar>(num_detection_block);
             convertByteArray2IntArray_fast_1b_sz(num_detection_block, buffer_pos, (num_detection_block - 1)/8 + 1, significant_block_id.data());
 
+            srand(3333);
             init();
             auto num_flushed_elements = compute_auxilliary_data_decompress(decData); 
 
@@ -82,6 +83,7 @@ namespace SZ {
                 //     quantizer.set_eb(eb);
                 // }
                 current_level = level;
+                current_base_eb = eb_final;
                 quantizer.set_eb(eb_final);
                 eb_final *= c;
 
@@ -118,6 +120,7 @@ namespace SZ {
             interpolator_id = conf.interpAlgo;
             direction_sequence_id = conf.interpDirection;
 
+            srand(3333);
             init();
             compute_auxilliary_data(conf, data);
 
@@ -140,6 +143,7 @@ namespace SZ {
                 //     quantizer.set_eb(eb);
                 // }
                 current_level = level;
+                current_base_eb = eb_final;
                 quantizer.set_eb(eb_final);
                 eb_final *= c;
 
@@ -250,8 +254,10 @@ namespace SZ {
             else{
                 auto default_eb = quantizer.get_eb();
                 if((current_level == 1) && significant_block[idx]){
-                    quantizer.set_eb(default_eb * c3);
+                    quantizer.set_eb(current_base_eb * c3);
                 }
+                // T noise = 2.0*rand()/RAND_MAX - 1.0;
+                // if(fabs(pred) > 1e-2) pred += noise * 0.3 * default_eb;
                 quant_inds.push_back(quantizer.quantize_and_overwrite(d, pred));
                 quantizer.set_eb(default_eb);        
             }
@@ -265,8 +271,10 @@ namespace SZ {
             else{
                 auto default_eb = quantizer.get_eb();
                 if((current_level == 1) && significant_block[idx]){
-                    quantizer.set_eb(default_eb * c3);
+                    quantizer.set_eb(current_base_eb * c3);
                 }
+                // T noise = 2.0*rand()/RAND_MAX - 1.0;
+                // if(fabs(pred) > 1e-2) pred += noise * 0.3 * default_eb;
                 d = quantizer.recover(pred, quant_inds[quant_index++]);
                 quantizer.set_eb(default_eb); 
             }
@@ -784,6 +792,7 @@ namespace SZ {
         std::vector<uchar> flushed_block_id;
         std::vector<uchar> significant_block;
         std::vector<uchar> significant_block_id;
+        double current_base_eb;
     };
 
 
