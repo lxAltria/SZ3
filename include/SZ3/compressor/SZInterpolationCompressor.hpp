@@ -55,6 +55,8 @@ namespace SZ {
             read(num_detection_block, buffer_pos);
             flushed_block_id = std::vector<uchar>(num_detection_block);
             convertByteArray2IntArray_fast_1b_sz(num_detection_block, buffer_pos, (num_detection_block - 1)/8 + 1, flushed_block_id.data());
+            significant_block_id = std::vector<uchar>(num_detection_block);
+            convertByteArray2IntArray_fast_1b_sz(num_detection_block, buffer_pos, (num_detection_block - 1)/8 + 1, significant_block_id.data());
 
             init();
             auto num_flushed_elements = compute_auxilliary_data_decompress(decData); 
@@ -69,6 +71,7 @@ namespace SZ {
             double eb = quantizer.get_eb();
             double eb_final = eb / pow(c, interpolation_level - 1);
 
+            std::cout << "start decompression\n";
             // *decData = quantizer.recover(0, quant_inds[quant_index++]);
             recover(0, *decData, 0);
 
@@ -184,6 +187,7 @@ namespace SZ {
             size_t num_detection_block = flushed_block_id.size();
             write(num_detection_block, buffer_pos);
             convertIntArray2ByteArray_fast_1b_to_result_sz(flushed_block_id.data(), flushed_block_id.size(), buffer_pos);
+            convertIntArray2ByteArray_fast_1b_to_result_sz(significant_block_id.data(), significant_block_id.size(), buffer_pos);
 
             quantizer.save(buffer_pos);
             quantizer.postcompress_data();
@@ -244,7 +248,12 @@ namespace SZ {
                 d = 0;
             }
             else{
-                quant_inds.push_back(quantizer.quantize_and_overwrite(d, pred));                
+                auto default_eb = quantizer.get_eb();
+                if((current_level == 1) && significant_block[idx]){
+                    quantizer.set_eb(default_eb * c3);
+                }
+                quant_inds.push_back(quantizer.quantize_and_overwrite(d, pred));
+                quantizer.set_eb(default_eb);        
             }
 
         }
@@ -254,7 +263,12 @@ namespace SZ {
                 d = 0;
             }
             else{
+                auto default_eb = quantizer.get_eb();
+                if((current_level == 1) && significant_block[idx]){
+                    quantizer.set_eb(default_eb * c3);
+                }
                 d = quantizer.recover(pred, quant_inds[quant_index++]);
+                quantizer.set_eb(default_eb); 
             }
         };
 
@@ -523,7 +537,8 @@ namespace SZ {
             // compute statistics
             int block_id = 0;
             int flushed_count = 0;
-            // std::vector<double> var;
+            // using variance for significant blocks
+            std::vector<double> var;
             T * x_data_pos = data;
             for(int i=0; i<nx; i++){
                 T * y_data_pos = x_data_pos;
@@ -539,9 +554,7 @@ namespace SZ {
                             for(int jj=0; jj<block_size; jj++){
                                 T * zz_data_pos = yy_data_pos;
                                 for(int kk=0; kk<block_size; kk++){
-                                    // int index = (i*block_size + ii) * dims[1] * dims[2] + (j*block_size + jj) * dims[2] + k*block_size +kk;
-                                    // // sum += data[index];
-                                    // if(fabs(data[index]) > max_abs_val) max_abs_val = fabs(data[index]);
+                                    sum += *zz_data_pos;
                                     if(fabs(*zz_data_pos) > max_abs_val) max_abs_val = fabs(*zz_data_pos);
                                     zz_data_pos ++;
                                 }
@@ -566,20 +579,29 @@ namespace SZ {
                             }
                             flushed_block_id[block_id] = 1;
                             flushed_count ++;
-                            // sum = 0;
+                            // skip the variance
+                            var.push_back(0);
                         }
-                        // double average = sum / (block_size*block_size*block_size);
-                        // double variance = 0;
-                        // for(int ii=0; ii<block_size; ii++){
-                        //     for(int jj=0; jj<block_size; jj++){
-                        //         for(int kk=0; kk<block_size; kk++){
-                        //             int index = (i*block_size + ii) * dims[1] * dims[2] + (j*block_size + jj) * dims[2] + k*block_size +kk;
-                        //             variance += (data[index] - average) * (data[index] - average);
-                        //         }
-                        //     }
-                        // }
-                        // variance /= (block_size*block_size*block_size);
-                        // var.push_back(variance);
+                        else{
+                            // compute variance 
+                            double average = sum / (block_size*block_size*block_size);
+                            double variance = 0;
+                            T * xx_data_pos = z_data_pos;
+                            for(int ii=0; ii<block_size; ii++){
+                                T * yy_data_pos = xx_data_pos;
+                                for(int jj=0; jj<block_size; jj++){
+                                    T * zz_data_pos = yy_data_pos;
+                                    for(int kk=0; kk<block_size; kk++){
+                                        variance += (*zz_data_pos - average) * (*zz_data_pos - average);
+                                        zz_data_pos ++;
+                                    }
+                                    yy_data_pos += dims[2];
+                                }
+                                xx_data_pos += dims[1] * dims[2];
+                            }
+                            variance /= (block_size*block_size*block_size);
+                            var.push_back(variance);
+                        }
                         block_id ++;
                         z_data_pos += block_size;
                     }
@@ -588,37 +610,44 @@ namespace SZ {
                 x_data_pos += block_size * dims[1] * dims[2];
             }
             std::cout << "flushed_count = " << flushed_count << ", percent = " << flushed_count * 1.0 / (nx * ny * nz) << std::endl;
-            // auto var_tmp(var);
-            // std::sort(var_tmp.begin(), var_tmp.end());
-            // double percent = 0.8;
-            // double threshold = var_tmp[(int)(percent*var.size())];
-            // std::cout << percent * 100 << "% threshold = " << threshold << std::endl;
-            // std::vector<int> significant_block_id;
-            // int var_id = 0;
-            // for(int i=0; i<nx; i++){
-            //     for(int j=0; j<ny; j++){
-            //         for(int k=0; k<nz; k++){
-            //             // compute average
-            //             significant_block_id.push_back(0);
-            //             if(var[var_id] > threshold){
-            //                 for(int ii=0; ii<block_size; ii++){
-            //                     for(int jj=0; jj<block_size; jj++){
-            //                         for(int kk=0; kk<block_size; kk++){
-            //                             int index = (i*block_size + ii) * dims[1] * dims[2] + (j*block_size + jj) * dims[2] + k*block_size +kk;
-            //                             significant_block[index] = 1;
-            //                         }
-            //                     }
-            //                 }
-            //                 significant_block_id[significant_block_id.size() - 1] = 1;
-            //             }
-            //             var_id ++;
-            //         }
-            //     }
-            // }
+            auto var_tmp(var);
+            std::sort(var_tmp.begin(), var_tmp.end());
+            double percent = 0.9;
+            double threshold = var_tmp[(int)(percent*var.size())];
+            std::cout << percent * 100 << "% threshold = " << threshold << std::endl;
+            significant_block = std::vector<uchar>(num_elements, 0);
+            significant_block_id = std::vector<uchar>(nx * ny * nz, 0);
+            block_id = 0;
+            x_data_pos = data;
+            for(int i=0; i<nx; i++){
+                T * y_data_pos = x_data_pos;
+                for(int j=0; j<ny; j++){
+                    T * z_data_pos = y_data_pos;
+                    for(int k=0; k<nz; k++){
+                        if(var[block_id] > threshold){
+                            T * xx_data_pos = z_data_pos;
+                            for(int ii=0; ii<block_size; ii++){
+                                T * yy_data_pos = xx_data_pos;
+                                for(int jj=0; jj<block_size; jj++){
+                                    T * zz_data_pos = yy_data_pos;
+                                    for(int kk=0; kk<block_size; kk++){
+                                        significant_block[zz_data_pos - data] = 1;
+                                        zz_data_pos ++;
+                                    }
+                                    yy_data_pos += dims[2];
+                                }
+                                xx_data_pos += dims[1] * dims[2];
+                            }
+                            significant_block_id[block_id] = 1;
+                        }
+                        block_id ++;
+                        z_data_pos += block_size;
+                    }
+                    y_data_pos += block_size * dims[2];
+                }
+                x_data_pos += block_size * dims[1] * dims[2];
+            }
             timer.stop("detect");
-            // writefile("significant_block_id.dat", significant_block_id.data(), significant_block_id.size());
-            // writefile("significant_block.dat", significant_block.data(), significant_block.size());
-            // writefile("flushed_block.dat", flushed_block.data(), flushed_block.size());
         }
 
         size_t compute_auxilliary_data_decompress(const T *data){
@@ -629,6 +658,7 @@ namespace SZ {
             int ny = dims[1] / block_size;
             int nz = dims[2] / block_size;
             flushed_block = std::vector<uchar>(num_elements, 0);
+            significant_block = std::vector<uchar>(num_elements, 0);
             int block_id = 0;
             size_t num_flushed_elements = 0;
             const T * x_data_pos = data;
@@ -646,6 +676,21 @@ namespace SZ {
                                     const T * zz_data_pos = yy_data_pos;
                                     for(int kk=0; kk<block_size; kk++){
                                         flushed_block[zz_data_pos - data] = 1;
+                                        zz_data_pos ++;
+                                    }
+                                    yy_data_pos += dims[2];
+                                }
+                                xx_data_pos += dims[1] * dims[2];
+                            }                        
+                        } 
+                        else if(significant_block_id[block_id]){
+                            const T * xx_data_pos = z_data_pos;
+                            for(int ii=0; ii<block_size; ii++){
+                                const T * yy_data_pos = xx_data_pos;
+                                for(int jj=0; jj<block_size; jj++){
+                                    const T * zz_data_pos = yy_data_pos;
+                                    for(int kk=0; kk<block_size; kk++){
+                                        significant_block[zz_data_pos - data] = 1;
                                         zz_data_pos ++;
                                     }
                                     yy_data_pos += dims[2];
@@ -737,6 +782,8 @@ namespace SZ {
         int detection_block_size = 16;
         std::vector<uchar> flushed_block;
         std::vector<uchar> flushed_block_id;
+        std::vector<uchar> significant_block;
+        std::vector<uchar> significant_block_id;
     };
 
 
