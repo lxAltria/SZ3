@@ -256,8 +256,8 @@ namespace SZ {
                 if((current_level == 1) && significant_block[idx]){
                     quantizer.set_eb(current_base_eb * c3);
                 }
-                // T noise = 2.0*rand()/RAND_MAX - 1.0;
-                // if(fabs(pred) > 1e-2) pred += noise * 0.3 * default_eb;
+                T noise = 2.0*rand()/RAND_MAX - 1.0;
+                if(fabs(pred) > 1e-2) pred += noise * 0.3 * default_eb;
                 quant_inds.push_back(quantizer.quantize_and_overwrite(d, pred));
                 quantizer.set_eb(default_eb);        
             }
@@ -273,8 +273,8 @@ namespace SZ {
                 if((current_level == 1) && significant_block[idx]){
                     quantizer.set_eb(current_base_eb * c3);
                 }
-                // T noise = 2.0*rand()/RAND_MAX - 1.0;
-                // if(fabs(pred) > 1e-2) pred += noise * 0.3 * default_eb;
+                T noise = 2.0*rand()/RAND_MAX - 1.0;
+                if(fabs(pred) > 1e-2) pred += noise * 0.3 * default_eb;
                 d = quantizer.recover(pred, quant_inds[quant_index++]);
                 quantizer.set_eb(default_eb); 
             }
