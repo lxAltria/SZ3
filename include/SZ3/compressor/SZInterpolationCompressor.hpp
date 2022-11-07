@@ -57,6 +57,11 @@ namespace SZ {
             convertByteArray2IntArray_fast_1b_sz(num_detection_block, buffer_pos, (num_detection_block - 1)/8 + 1, flushed_block_id.data());
             significant_block_id = std::vector<uchar>(num_detection_block);
             convertByteArray2IntArray_fast_1b_sz(num_detection_block, buffer_pos, (num_detection_block - 1)/8 + 1, significant_block_id.data());
+            // read additional variable
+            read(noise_rate, buffer_pos);
+            read(detection_eb_rate, buffer_pos);
+            std::cout << "detection_eb_rate = " << detection_eb_rate << std::endl;
+            std::cout << "noise_rate = " << noise_rate << std::endl;
 
             srand(3333);
             init();
@@ -119,6 +124,15 @@ namespace SZ {
             blocksize = conf.interpBlockSize;
             interpolator_id = conf.interpAlgo;
             direction_sequence_id = conf.interpDirection;
+            // assign additional variable
+            detection_block_size = conf.detection_block_size;
+            detection_threshold = conf.detection_threshold;
+            detection_eb_rate = conf.detection_eb_rate;
+            noise_rate = conf.noise_rate;
+            std::cout << "detection_block_size = " << detection_block_size << std::endl;
+            std::cout << "detection_threshold = " << detection_threshold << std::endl;
+            std::cout << "detection_eb_rate = " << detection_eb_rate << std::endl;
+            std::cout << "noise_rate = " << noise_rate << std::endl;
 
             srand(3333);
             init();
@@ -192,6 +206,9 @@ namespace SZ {
             write(num_detection_block, buffer_pos);
             convertIntArray2ByteArray_fast_1b_to_result_sz(flushed_block_id.data(), flushed_block_id.size(), buffer_pos);
             convertIntArray2ByteArray_fast_1b_to_result_sz(significant_block_id.data(), significant_block_id.size(), buffer_pos);
+            // add additional variable
+            write(noise_rate, buffer_pos);
+            write(detection_eb_rate, buffer_pos);
 
             quantizer.save(buffer_pos);
             quantizer.postcompress_data();
@@ -254,10 +271,12 @@ namespace SZ {
             else{
                 auto default_eb = quantizer.get_eb();
                 if((current_level == 1) && significant_block[idx]){
-                    quantizer.set_eb(current_base_eb * c3);
+                    quantizer.set_eb(default_eb * detection_eb_rate);
                 }
-                T noise = 2.0*rand()/RAND_MAX - 1.0;
-                if(fabs(pred) > 1e-2) pred += noise * 0.3 * default_eb;
+                if(noise_rate != 0){
+                    T noise = 2.0*rand()/RAND_MAX - 1.0;
+                    if(fabs(pred) > 1e-2) pred += noise * noise_rate * default_eb;                    
+                }
                 quant_inds.push_back(quantizer.quantize_and_overwrite(d, pred));
                 quantizer.set_eb(default_eb);        
             }
@@ -271,10 +290,12 @@ namespace SZ {
             else{
                 auto default_eb = quantizer.get_eb();
                 if((current_level == 1) && significant_block[idx]){
-                    quantizer.set_eb(current_base_eb * c3);
+                    quantizer.set_eb(default_eb * detection_eb_rate);
                 }
-                T noise = 2.0*rand()/RAND_MAX - 1.0;
-                if(fabs(pred) > 1e-2) pred += noise * 0.3 * default_eb;
+                if(noise_rate != 0){
+                    T noise = 2.0*rand()/RAND_MAX - 1.0;
+                    if(fabs(pred) > 1e-2) pred += noise * noise_rate * default_eb;                    
+                }
                 d = quantizer.recover(pred, quant_inds[quant_index++]);
                 quantizer.set_eb(default_eb); 
             }
@@ -620,7 +641,7 @@ namespace SZ {
             std::cout << "flushed_count = " << flushed_count << ", percent = " << flushed_count * 1.0 / (nx * ny * nz) << std::endl;
             auto var_tmp(var);
             std::sort(var_tmp.begin(), var_tmp.end());
-            double percent = 0.9;
+            double percent = detection_threshold;
             double threshold = var_tmp[(int)(percent*var.size())];
             std::cout << percent * 100 << "% threshold = " << threshold << std::endl;
             significant_block = std::vector<uchar>(num_elements, 0);
@@ -788,6 +809,9 @@ namespace SZ {
         double c2 = 1.0 / 1.640625;
         double c3 = 1.0 / sqrt(4.4159889);
         int detection_block_size = 16;
+        double detection_threshold = 0.9;
+        double detection_eb_rate = c3;
+        double noise_rate = 0;
         std::vector<uchar> flushed_block;
         std::vector<uchar> flushed_block_id;
         std::vector<uchar> significant_block;

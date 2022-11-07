@@ -117,7 +117,11 @@ namespace SZ {
             interpBlockSize = cfg.GetInteger("AlgoSettings", "InterpolationBlockSize", interpBlockSize);
             blockSize = cfg.GetInteger("AlgoSettings", "BlockSize", blockSize);
             quantbinCnt = cfg.GetInteger("AlgoSettings", "QuantizationBinTotal", quantbinCnt);
-
+            // additional variable
+            detection_block_size = cfg.GetReal("ArtifactSettings", "DetectionBlockSize", detection_block_size);
+            detection_threshold = cfg.GetReal("ArtifactSettings", "DetectionThreshold", detection_threshold);
+            detection_eb_rate = cfg.GetReal("ArtifactSettings", "DetectionEBRate", detection_eb_rate);
+            noise_rate = cfg.GetReal("ArtifactSettings", "NoiseRate", noise_rate);
 
         }
 
@@ -144,6 +148,11 @@ namespace SZ {
             write(stride, c);
             write(pred_dim, c);
             write(openmp, c);
+            // add additional variable
+            write(detection_block_size, c);
+            write(detection_threshold, c);
+            write(detection_eb_rate, c);
+            write(noise_rate, c);
         };
 
         void load(const unsigned char *&c) {
@@ -169,6 +178,11 @@ namespace SZ {
             read(stride, c);
             read(pred_dim, c);
             read(openmp, c);
+            // add additional variable
+            read(detection_block_size, c);
+            read(detection_threshold, c);
+            read(detection_eb_rate, c);
+            read(noise_rate, c);
         }
 
         void print() {
@@ -202,7 +216,11 @@ namespace SZ {
         int blockSize;
         int stride; //not used now
         int pred_dim; // not used now
-
+        // for artifact mitagation
+        int detection_block_size = 16;
+        double detection_threshold = 0.9;
+        double detection_eb_rate = 1.0 / sqrt(4.4159889);
+        double noise_rate = 0;
     };
 
 
