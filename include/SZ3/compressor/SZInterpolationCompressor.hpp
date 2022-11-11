@@ -271,7 +271,7 @@ namespace SZ {
             else{
                 auto default_eb = quantizer.get_eb();
                 if((current_level == 1) && significant_block[idx]){
-                    quantizer.set_eb(default_eb * detection_eb_rate);
+                    quantizer.set_eb(current_base_eb * detection_eb_rate);
                 }
                 if(noise_rate != 0){
                     T noise = 2.0*rand()/RAND_MAX - 1.0;
@@ -290,7 +290,7 @@ namespace SZ {
             else{
                 auto default_eb = quantizer.get_eb();
                 if((current_level == 1) && significant_block[idx]){
-                    quantizer.set_eb(default_eb * detection_eb_rate);
+                    quantizer.set_eb(current_base_eb * detection_eb_rate);
                 }
                 if(noise_rate != 0){
                     T noise = 2.0*rand()/RAND_MAX - 1.0;
